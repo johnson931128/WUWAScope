@@ -25,7 +25,11 @@ public partial class App : Application
             {
                 for (var i = 0; i < args.Length; i++)
                 {
-                    if (string.Equals(args[i], "--open-node", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    if (string.Equals(args[i], "--scenario", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    {
+                        vm.SelectScenarioCommand.Execute(args[i + 1]);
+                    }
+                    else if (string.Equals(args[i], "--open-node", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                     {
                         vm.OpenNodeCommand.Execute(args[i + 1]);
                     }

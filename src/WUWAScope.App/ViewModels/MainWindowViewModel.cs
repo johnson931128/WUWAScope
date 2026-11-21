@@ -3,6 +3,7 @@ using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WUWAScope.Simulation.Contracts;
+using WUWAScope.Simulation.Engine;
 using WUWAScope.Simulation.Models;
 using WUWAScope.Simulation.Stubs;
 
@@ -16,6 +17,10 @@ public enum NavigationLevel
 }
 
 public sealed record KeyValueItem(string Label, string Value);
+
+public sealed record ScenarioListItem(
+    ScenarioDescriptor Descriptor,
+    bool IsSelected);
 
 public sealed record ModuleListItem(
     string Id,
@@ -49,13 +54,16 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private const double BaseSimMsPerRealSecond = 420.0;
 
-    private readonly ISimulationEngine _engine;
-    private readonly HashSet<string> _expandedNodeIds = ["coordinator"];
+    private ISimulationEngine _engine;
+    private readonly HashSet<string> _expandedNodeIds = [];
 
     public event Action? LayoutResetRequested;
 
     [ObservableProperty]
     private SimulationState _currentState;
+
+    [ObservableProperty]
+    private ScenarioDescriptor _activeScenario;
 
     [ObservableProperty]
     private bool _isPlaying;
@@ -113,7 +121,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _inspectorTitle = "Distributed Task Scheduling";
 
     [ObservableProperty]
-    private string _inspectorSubtitle = "1 Client · 1 Coordinator · 3 Workers";
+    private string _inspectorSubtitle = string.Empty;
 
     [ObservableProperty]
     private string _inspectorStatusLabel = "● Healthy";
@@ -135,28 +143,23 @@ public partial class MainWindowViewModel : ViewModelBase
         _engine.StateChanged += OnEngineStateChanged;
 
         Scenarios = ScenarioCatalog.All;
-        ActiveScenario = Scenarios[0];
+        _activeScenario = Scenarios.FirstOrDefault(s => s.Id == _currentState.ScenarioId) ?? Scenarios[0];
         SpeedOptions = ["0.5x", "1.0x", "2.0x", "4.0x"];
-        EventCategoryOptions = ["All", "Jobs", "Network", "Heartbeats", "Faults"];
-        EventNodeOptions = ["All", "client", "coordinator", "worker-1", "worker-2", "worker-3"];
+        EventCategoryOptions = ["All", "Protocol", "Jobs", "Network", "Heartbeats", "Faults"];
 
-        StatusBannerText = IsPrototypeStub
-            ? "Phase 0 Prototype Shell — Sample snapshot data is shown."
-            : "Ready! Press Play (Space) or Step (N) to watch Job J1 move through the cluster.";
-
-        SelectedNodeId = "coordinator";
+        InitializeSelectionForCurrentScenario();
         RefreshAllDerivedCollections();
     }
 
     public IReadOnlyList<ScenarioDescriptor> Scenarios { get; }
 
-    public ScenarioDescriptor ActiveScenario { get; }
-
     public IReadOnlyList<string> SpeedOptions { get; }
 
     public IReadOnlyList<string> EventCategoryOptions { get; }
 
-    public IReadOnlyList<string> EventNodeOptions { get; }
+    public ObservableCollection<ScenarioListItem> ScenarioItems { get; } = [];
+
+    public ObservableCollection<string> EventNodeOptions { get; } = [];
 
     public ObservableCollection<NodeOutlineItem> ClusterNodes { get; } = [];
 
@@ -188,19 +191,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string SimulatedTimeDisplay => $"t = {Math.Round(VisualTimeMs):0} ms (Simulated)";
 
+    // Backwards-compatible properties for Task Scheduling + dynamic labels for all 4 scenarios
     public string TargetWorkerActionLabel
     {
         get
         {
-            var worker = ResolveTargetWorker();
-            if (worker is null)
+            var target = ResolveCrashableTargetNode();
+            if (target is null)
             {
-                return "⚡ Crash Worker";
+                return "⚡ Crash Node";
             }
 
-            return worker.Health == NodeHealthStatus.Failed
-                ? $"↻ Recover {worker.Name}"
-                : $"⚡ Crash {worker.Name}";
+            return target.Health == NodeHealthStatus.Failed
+                ? $"↻ Recover {target.Name}"
+                : $"⚡ Crash {target.Name}";
         }
     }
 
@@ -211,6 +215,29 @@ public partial class MainWindowViewModel : ViewModelBase
     public string DropActionLabel => CurrentState.Metrics.ArmedDropCount > 0
         ? $"✕ Drop Msg ({CurrentState.Metrics.ArmedDropCount} armed)"
         : "✕ Drop Next Msg";
+
+    // Context-aware toolbar buttons for all 4 scenarios
+    public string Action1Label => CurrentState.ScenarioId switch
+    {
+        "logical-clocks" => $"+ Local Event ({GetSelectedOrFirstNode()?.Name ?? "P1"})",
+        "global-snapshots" => $"📸 Start Snapshot ({GetSelectedOrFirstNode()?.Name ?? "Account B"})",
+        "raft-leader-election" => TargetWorkerActionLabel,
+        _ => "+ Submit Job"
+    };
+
+    public string Action2Label => CurrentState.ScenarioId switch
+    {
+        "logical-clocks" => $"✉ Send ({GetSelectedOrFirstNode()?.Name ?? "P1"} → {GetNextPeerNode()?.Name ?? "P2"})",
+        "global-snapshots" => $"💸 Send $50 ({GetSelectedOrFirstNode()?.Name ?? "A"} → {GetNextPeerNode()?.Name ?? "B"})",
+        "raft-leader-election" => $"⏱ Force Timeout ({ResolveTimeoutTargetRaftNode()?.Name ?? "Node 1"})",
+        _ => TargetWorkerActionLabel
+    };
+
+    public string Action3Label => DelayActionLabel;
+
+    public string Action4Label => DropActionLabel;
+
+    public bool ShowAction4 => CurrentState.ScenarioId is "task-scheduling" or "raft-leader-election";
 
     public string BreadcrumbText => CurrentLevel switch
     {
@@ -249,6 +276,50 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public NodeState? ActiveNode => FindNode(ActiveNodeId);
 
+    private void InitializeSelectionForCurrentScenario()
+    {
+        _expandedNodeIds.Clear();
+        CurrentLevel = NavigationLevel.Cluster;
+        ActiveNodeId = null;
+        SelectedModuleId = null;
+        SelectedEventId = null;
+        SelectedEvent = null;
+        SelectedEventPayload.Clear();
+        EventCategoryFilter = "All";
+        EventNodeFilter = "All";
+        EventSearchText = string.Empty;
+
+        EventNodeOptions.Clear();
+        EventNodeOptions.Add("All");
+        foreach (var n in CurrentState.Nodes)
+        {
+            EventNodeOptions.Add(n.Id);
+        }
+
+        // Default selection per scenario for an immediately informative Inspector
+        SelectedNodeId = CurrentState.ScenarioId switch
+        {
+            "task-scheduling" => CurrentState.Nodes.FirstOrDefault(n => n.Id == "coordinator")?.Id ?? CurrentState.Nodes.FirstOrDefault()?.Id,
+            "global-snapshots" => CurrentState.Nodes.FirstOrDefault(n => n.Id == "acct-b")?.Id ?? CurrentState.Nodes.FirstOrDefault()?.Id,
+            _ => CurrentState.Nodes.FirstOrDefault()?.Id
+        };
+
+        if (SelectedNodeId is not null)
+        {
+            _expandedNodeIds.Add(SelectedNodeId);
+        }
+
+        StatusBannerText = IsPrototypeStub
+            ? "Phase 0 Prototype Shell — Sample snapshot data is shown."
+            : CurrentState.ScenarioId switch
+            {
+                "logical-clocks" => "Press Play (Space) or Step (N) to replay the Note 01 Lamport & Vector Clock timeline.",
+                "global-snapshots" => "Press Play (Space) or Step (N) to watch Chandy-Lamport Markers conserve $1,000 across in-flight transfers.",
+                "raft-leader-election" => "Press Play (Space) or Step (N) to watch 5 servers elect a Term Leader — then crash the Leader to test failover!",
+                _ => "Ready! Press Play (Space) or Step (N) to watch Job J1 move through the cluster."
+            };
+    }
+
     private void OnEngineStateChanged(object? sender, SimulationState newState)
     {
         CurrentState = newState;
@@ -284,10 +355,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnEventSearchTextChanged(string value) => RefreshFilteredEvents();
 
-    /// <summary>
-    /// Advances the smooth visual playback clock during Play mode and executes engine events
-    /// strictly at their exact simulated timestamps. Speed never alters event ordering or outcomes.
-    /// </summary>
     public void AdvancePlaybackFrame(double deltaRealSeconds)
     {
         if (!IsPlaying || !CanRunLivePlayback || deltaRealSeconds <= 0)
@@ -299,7 +366,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (nextEventTime is null)
         {
             IsPlaying = false;
-            StatusBannerText = "Simulation idle — click '+ Submit Job' to send more work.";
+            StatusBannerText = "Timeline idle — trigger a toolbar action or Reset to explore again.";
             return;
         }
 
@@ -328,6 +395,41 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    public void SelectScenario(string? scenarioId)
+    {
+        if (string.IsNullOrWhiteSpace(scenarioId))
+        {
+            return;
+        }
+
+        var descriptor = Scenarios.FirstOrDefault(s => s.Id == scenarioId);
+        if (descriptor is null || !descriptor.IsAvailable)
+        {
+            return;
+        }
+
+        IsPlaying = false;
+        _engine.StateChanged -= OnEngineStateChanged;
+        _engine = ScenarioFactory.Create(scenarioId, seed: 42);
+        _engine.StateChanged += OnEngineStateChanged;
+
+        ActiveScenario = descriptor;
+        CurrentState = _engine.GetState();
+        VisualTimeMs = CurrentState.SimulatedTimeMs;
+
+        InitializeSelectionForCurrentScenario();
+        OnPropertyChanged(nameof(IsPrototypeStub));
+        OnPropertyChanged(nameof(CanRunLivePlayback));
+        OnPropertyChanged(nameof(CanPlay));
+        OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(HasSelectedEvent));
+        OnPropertyChanged(nameof(SelectedEventRoute));
+        NotifyNavigationChanged();
+        RefreshAllDerivedCollections();
+        LayoutResetRequested?.Invoke();
+    }
+
+    [RelayCommand]
     public void PlaySimulation()
     {
         if (!CanRunLivePlayback)
@@ -335,7 +437,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (_engine.PeekNextEventTimeMs() is null)
+        if (_engine.PeekNextEventTimeMs() is null && CurrentState.ScenarioId == "task-scheduling")
         {
             _engine.DispatchAction(new SubmitJobAction("New Job", TaskCount: 1));
         }
@@ -344,22 +446,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void PauseSimulation()
-    {
-        IsPlaying = false;
-    }
+    public void PauseSimulation() => IsPlaying = false;
 
     [RelayCommand]
     public void TogglePlayPause()
     {
-        if (IsPlaying)
-        {
-            PauseSimulation();
-        }
-        else
-        {
-            PlaySimulation();
-        }
+        if (IsPlaying) PauseSimulation();
+        else PlaySimulation();
     }
 
     [RelayCommand]
@@ -393,7 +486,7 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedEventPayload.Clear();
         StatusBannerText = IsPrototypeStub
             ? "Prototype snapshot reset."
-            : "Simulation reset to t = 0 ms (same seed and initial state).";
+            : $"Reset '{ActiveScenario.Title}' to t = 0 ms (same seed and initial state).";
 
         LayoutResetRequested?.Invoke();
         OnPropertyChanged(nameof(HasSelectedEvent));
@@ -402,12 +495,92 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    public void ExecuteAction1()
+    {
+        if (!CanRunLivePlayback) return;
+
+        switch (CurrentState.ScenarioId)
+        {
+            case "logical-clocks":
+                var proc = GetSelectedOrFirstNode();
+                if (proc is not null)
+                {
+                    _engine.DispatchAction(new TriggerLocalEventAction(proc.Id));
+                    if (!IsPlaying) StepSimulation();
+                }
+                break;
+
+            case "global-snapshots":
+                var init = GetSelectedOrFirstNode();
+                if (init is not null)
+                {
+                    _engine.DispatchAction(new InitiateSnapshotAction(init.Id));
+                    if (!IsPlaying) StepSimulation();
+                }
+                break;
+
+            case "raft-leader-election":
+                ToggleCrashTargetWorker();
+                break;
+
+            default:
+                SubmitJob();
+                break;
+        }
+    }
+
+    [RelayCommand]
+    public void ExecuteAction2()
+    {
+        if (!CanRunLivePlayback) return;
+
+        switch (CurrentState.ScenarioId)
+        {
+            case "logical-clocks":
+                var srcP = GetSelectedOrFirstNode();
+                var dstP = GetNextPeerNode();
+                if (srcP is not null && dstP is not null)
+                {
+                    _engine.DispatchAction(new SendPeerMessageAction(srcP.Id, dstP.Id));
+                    if (!IsPlaying) StepSimulation();
+                }
+                break;
+
+            case "global-snapshots":
+                var srcA = GetSelectedOrFirstNode();
+                var dstA = GetNextPeerNode();
+                if (srcA is not null && dstA is not null)
+                {
+                    _engine.DispatchAction(new SendTransferAction(srcA.Id, dstA.Id, 50));
+                    if (!IsPlaying) StepSimulation();
+                }
+                break;
+
+            case "raft-leader-election":
+                var target = ResolveTimeoutTargetRaftNode();
+                if (target is not null)
+                {
+                    _engine.DispatchAction(new TriggerElectionTimeoutAction(target.Id));
+                    if (!IsPlaying) StepSimulation();
+                }
+                break;
+
+            default:
+                ToggleCrashTargetWorker();
+                break;
+        }
+    }
+
+    [RelayCommand]
+    public void ExecuteAction3() => DelayNextMessage();
+
+    [RelayCommand]
+    public void ExecuteAction4() => DropNextMessage();
+
+    [RelayCommand]
     public void SubmitJob()
     {
-        if (!CanRunLivePlayback)
-        {
-            return;
-        }
+        if (!CanRunLivePlayback) return;
 
         _engine.DispatchAction(new SubmitJobAction("User Job", TaskCount: 1));
         if (!IsPlaying)
@@ -423,16 +596,10 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void ToggleCrashTargetWorker()
     {
-        if (!CanRunLivePlayback)
-        {
-            return;
-        }
+        if (!CanRunLivePlayback) return;
 
-        var target = ResolveTargetWorker();
-        if (target is null)
-        {
-            return;
-        }
+        var target = ResolveCrashableTargetNode();
+        if (target is null) return;
 
         if (target.Health == NodeHealthStatus.Failed)
         {
@@ -452,25 +619,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void DelayNextMessage()
     {
-        if (!CanRunLivePlayback)
-        {
-            return;
-        }
+        if (!CanRunLivePlayback) return;
 
-        _engine.DispatchAction(new DelayNextMessageAction(ExtraDelayMs: 2600));
-        StatusBannerText = "Armed +2600 ms delay on the next job/task/result message (great for triggering retries & stale replies).";
+        var extraMs = CurrentState.ScenarioId == "task-scheduling" ? 2600 : 650;
+        _engine.DispatchAction(new DelayNextMessageAction(ExtraDelayMs: extraMs));
+        StatusBannerText = $"Armed +{extraMs} ms delay on the next protocol message.";
     }
 
     [RelayCommand]
     public void DropNextMessage()
     {
-        if (!CanRunLivePlayback)
-        {
-            return;
-        }
+        if (!CanRunLivePlayback) return;
 
         _engine.DispatchAction(new DropNextMessageAction());
-        StatusBannerText = "Armed packet drop on the next job/task/result message.";
+        StatusBannerText = "Armed packet drop on the next protocol message.";
     }
 
     [RelayCommand]
@@ -544,10 +706,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void ToggleNodeExpanded(string? nodeId)
     {
-        if (string.IsNullOrWhiteSpace(nodeId))
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(nodeId)) return;
 
         if (!_expandedNodeIds.Add(nodeId))
         {
@@ -592,10 +751,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         var owner = CurrentState.Nodes.FirstOrDefault(n => n.Modules.Any(m => m.Id == moduleId));
-        if (owner is null)
-        {
-            return;
-        }
+        if (owner is null) return;
 
         _expandedNodeIds.Add(owner.Id);
         ActiveNodeId = owner.Id;
@@ -627,10 +783,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    public void SetEventCategoryFilter(string category)
-    {
-        EventCategoryFilter = category;
-    }
+    public void SetEventCategoryFilter(string category) => EventCategoryFilter = category;
 
     [RelayCommand]
     public void SelectEvent(EventListItem? item)
@@ -676,10 +829,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            Process.Start(new ProcessStartInfo(ActiveScenario.TheoryNoteUrl)
-            {
-                UseShellExecute = true
-            });
+            Process.Start(new ProcessStartInfo(ActiveScenario.TheoryNoteUrl) { UseShellExecute = true });
         }
         catch
         {
@@ -687,17 +837,66 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private NodeState? ResolveTargetWorker()
+    private NodeState? GetSelectedOrFirstNode() =>
+        FindNode(SelectedNodeId) ?? CurrentState.Nodes.FirstOrDefault();
+
+    private NodeState? GetNextPeerNode()
     {
+        if (CurrentState.Nodes.Count < 2) return null;
+        var current = GetSelectedOrFirstNode();
+        if (current is null) return CurrentState.Nodes[0];
+
+        var idx = -1;
+        for (var i = 0; i < CurrentState.Nodes.Count; i++)
+        {
+            if (CurrentState.Nodes[i].Id == current.Id)
+            {
+                idx = i;
+                break;
+            }
+        }
+
+        return CurrentState.Nodes[(idx + 1) % CurrentState.Nodes.Count];
+    }
+
+    private NodeState? ResolveCrashableTargetNode()
+    {
+        if (CurrentState.ScenarioId == "raft-leader-election")
+        {
+            if (FindNode(SelectedNodeId) is { Role: NodeRole.RaftServer } selectedRaft)
+            {
+                return selectedRaft;
+            }
+
+            // Default to crashing the active Leader so one click demonstrates Raft failover!
+            return CurrentState.Nodes.FirstOrDefault(n => n.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal))
+                   ?? CurrentState.Nodes.FirstOrDefault(n => n.Health != NodeHealthStatus.Failed)
+                   ?? CurrentState.Nodes.FirstOrDefault();
+        }
+
         if (FindNode(SelectedNodeId) is { Role: NodeRole.Worker } selectedWorker)
         {
             return selectedWorker;
         }
 
-        // Prefer a currently busy worker so "Crash Worker" immediately demonstrates active failover
         return CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker && n.ActiveTaskCount > 0)
                ?? CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker && n.Health != NodeHealthStatus.Failed)
                ?? CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker);
+    }
+
+    private NodeState? ResolveTimeoutTargetRaftNode()
+    {
+        if (FindNode(SelectedNodeId) is { Role: NodeRole.RaftServer, Health: not NodeHealthStatus.Failed } sel &&
+            !sel.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal))
+        {
+            return sel;
+        }
+
+        return CurrentState.Nodes.FirstOrDefault(n =>
+            n.Role == NodeRole.RaftServer &&
+            n.Health != NodeHealthStatus.Failed &&
+            !n.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal))
+            ?? CurrentState.Nodes.FirstOrDefault(n => n.Health != NodeHealthStatus.Failed);
     }
 
     private void NotifyNavigationChanged()
@@ -708,11 +907,24 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanOpenSelectedNodeInternals));
         OnPropertyChanged(nameof(ActiveNode));
         OnPropertyChanged(nameof(SimulatedTimeDisplay));
+        NotifyActionLabelsChanged();
+    }
+
+    private void NotifyActionLabelsChanged()
+    {
         OnPropertyChanged(nameof(TargetWorkerActionLabel));
+        OnPropertyChanged(nameof(DelayActionLabel));
+        OnPropertyChanged(nameof(DropActionLabel));
+        OnPropertyChanged(nameof(Action1Label));
+        OnPropertyChanged(nameof(Action2Label));
+        OnPropertyChanged(nameof(Action3Label));
+        OnPropertyChanged(nameof(Action4Label));
+        OnPropertyChanged(nameof(ShowAction4));
     }
 
     private void RefreshAllDerivedCollections()
     {
+        RefreshScenarioItems();
         RefreshClusterOutline();
         RefreshInspector();
         RefreshFilteredEvents();
@@ -720,9 +932,16 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasChildModules));
         OnPropertyChanged(nameof(CanOpenSelectedNodeInternals));
         OnPropertyChanged(nameof(ActiveNode));
-        OnPropertyChanged(nameof(TargetWorkerActionLabel));
-        OnPropertyChanged(nameof(DelayActionLabel));
-        OnPropertyChanged(nameof(DropActionLabel));
+        NotifyActionLabelsChanged();
+    }
+
+    private void RefreshScenarioItems()
+    {
+        ScenarioItems.Clear();
+        foreach (var s in Scenarios)
+        {
+            ScenarioItems.Add(new ScenarioListItem(s, s.Id == CurrentState.ScenarioId));
+        }
     }
 
     private void RefreshClusterOutline()
@@ -745,6 +964,9 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 NodeRole.Client => "◰",
                 NodeRole.Coordinator => "◈",
+                NodeRole.Process => "◷",
+                NodeRole.Account => "$",
+                NodeRole.RaftServer => node.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal) ? "★" : "◈",
                 _ => "▤"
             };
 
@@ -777,7 +999,7 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorSubtitle = $"{parentNode?.Name ?? module.NodeId} · {module.ShortRole}";
             InspectorStatusLabel = FormatModuleStatus(module.Status);
             InspectorPlainDescription = module.PlainDescription;
-            InspectorQueueTitle = "Items & Local Queue";
+            InspectorQueueTitle = "Items & Local State";
 
             if (module.QueueItems.Count == 0)
             {
@@ -798,29 +1020,49 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         else if (FindNode(ActiveNodeId ?? SelectedNodeId) is { } node)
         {
-            InspectorKindLabel = $"{node.Role.ToString().ToUpperInvariant()} MACHINE";
+            InspectorKindLabel = $"{node.Role.ToString().ToUpperInvariant()} NODE";
             InspectorTitle = node.Name;
             InspectorSubtitle = node.StatusSummary;
             InspectorStatusLabel = FormatNodeHealth(node.Health);
             InspectorPlainDescription = node.PlainDescription;
-            InspectorQueueTitle = "Recent Inbox & Outbox Activity";
+            InspectorQueueTitle = "Live Node State & Messages";
 
             foreach (var item in node.InboxItems)
             {
-                InspectorQueueItems.Add($"In: {item}");
+                InspectorQueueItems.Add(item);
             }
 
             foreach (var item in node.OutboxItems)
             {
-                InspectorQueueItems.Add($"Out: {item}");
+                if (!InspectorQueueItems.Contains(item))
+                {
+                    InspectorQueueItems.Add(item);
+                }
             }
 
             if (InspectorQueueItems.Count == 0)
             {
-                InspectorQueueItems.Add("No recent messages");
+                InspectorQueueItems.Add("No recent activity");
             }
 
-            InspectorCounters.Add(new KeyValueItem("Active Tasks (Simulated)", $"{node.ActiveTaskCount} / {node.Capacity}"));
+            if (node.Role == NodeRole.RaftServer)
+            {
+                InspectorCounters.Add(new KeyValueItem("Current Term", node.ActiveTaskCount.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Majority Quorum", $"{node.Capacity} / {CurrentState.Nodes.Count}"));
+            }
+            else if (node.Role == NodeRole.Account)
+            {
+                InspectorCounters.Add(new KeyValueItem("Live Balance (Simulated)", $"${node.ActiveTaskCount}"));
+            }
+            else if (node.Role == NodeRole.Process)
+            {
+                InspectorCounters.Add(new KeyValueItem("Lamport Clock", node.ActiveTaskCount.ToString()));
+            }
+            else
+            {
+                InspectorCounters.Add(new KeyValueItem("Active Tasks (Simulated)", $"{node.ActiveTaskCount} / {node.Capacity}"));
+            }
+
             InspectorCounters.Add(new KeyValueItem("Internal Modules", node.Modules.Count.ToString()));
             InspectorCounters.Add(new KeyValueItem("Simulated Clock", $"{CurrentState.SimulatedTimeMs} ms"));
 
@@ -840,33 +1082,40 @@ public partial class MainWindowViewModel : ViewModelBase
             var metrics = CurrentState.Metrics;
             InspectorKindLabel = "CLUSTER OVERVIEW";
             InspectorTitle = CurrentState.ScenarioTitle;
-            InspectorSubtitle = $"{CurrentState.Nodes.Count} machines · Seed #{CurrentState.Seed}";
-            InspectorStatusLabel = metrics.RunningTasks > 0 ? "▶ Processing" : "● Healthy";
+            InspectorSubtitle = $"{CurrentState.Nodes.Count} nodes · Seed #{CurrentState.Seed}";
+            InspectorStatusLabel = "● Active";
             InspectorPlainDescription = ActiveScenario.ShortSummary;
-            InspectorQueueTitle = "Jobs & Tasks";
+            InspectorQueueTitle = "Cluster Summary";
 
-            if (CurrentState.Tasks.Count == 0)
+            foreach (var n in CurrentState.Nodes)
             {
-                InspectorQueueItems.Add("No tasks yet — press Play or Step");
+                InspectorQueueItems.Add($"{n.Name}: {n.StatusSummary}");
+            }
+
+            if (CurrentState.ScenarioId == "task-scheduling")
+            {
+                InspectorCounters.Add(new KeyValueItem("Pending / Running / Done", $"{metrics.PendingTasks} / {metrics.RunningTasks} / {metrics.CompletedTasks}"));
+                InspectorCounters.Add(new KeyValueItem("Retries (Simulated)", metrics.RetryCount.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Stale Replies Ignored", metrics.StaleResultsIgnored.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
+            }
+            else if (CurrentState.ScenarioId == "global-snapshots")
+            {
+                InspectorCounters.Add(new KeyValueItem("Completed Snapshots", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Last Snapshot Total", metrics.LastJobDurationMs.HasValue ? $"${metrics.LastJobDurationMs.Value}" : "Pending"));
+                InspectorCounters.Add(new KeyValueItem("FIFO Messages Sent", metrics.MessagesSent.ToString()));
+            }
+            else if (CurrentState.ScenarioId == "raft-leader-election")
+            {
+                InspectorCounters.Add(new KeyValueItem("Alive Servers", $"{metrics.QueueDepth} / {CurrentState.Nodes.Count}"));
+                InspectorCounters.Add(new KeyValueItem("Highest Term", metrics.DispatchedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Elections / Leaders", $"{metrics.PendingTasks} / {metrics.CompletedTasks}"));
+                InspectorCounters.Add(new KeyValueItem("RPCs Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
             }
             else
             {
-                foreach (var task in CurrentState.Tasks)
-                {
-                    var workerText = task.AssignedWorkerId is null ? "Queued" : FormatNodeName(task.AssignedWorkerId);
-                    var attemptText = task.AcceptedAttemptId ?? task.CurrentAttemptId ?? "-";
-                    InspectorQueueItems.Add($"{task.Id} ({task.Status}, {attemptText}) → {workerText}");
-                }
-            }
-
-            InspectorCounters.Add(new KeyValueItem("Pending / Running / Done", $"{metrics.PendingTasks} / {metrics.RunningTasks} / {metrics.CompletedTasks}"));
-            InspectorCounters.Add(new KeyValueItem("Queue Depth (Simulated)", metrics.QueueDepth.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Retries (Simulated)", metrics.RetryCount.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Stale Replies Ignored", metrics.StaleResultsIgnored.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
-            if (metrics.LastJobDurationMs.HasValue)
-            {
-                InspectorCounters.Add(new KeyValueItem("Last Job Duration (Simulated)", $"{metrics.LastJobDurationMs.Value} ms"));
+                InspectorCounters.Add(new KeyValueItem("Logged Events", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages Sent", metrics.MessagesSent.ToString()));
             }
         }
 
@@ -878,7 +1127,6 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         FilteredEvents.Clear();
 
-        // Newest events appear at the top so live simulation updates are immediately readable
         foreach (var evt in CurrentState.EventLog.OrderByDescending(e => e.Sequence))
         {
             if (EventCategoryFilter != "All" &&

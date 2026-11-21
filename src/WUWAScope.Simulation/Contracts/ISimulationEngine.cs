@@ -34,6 +34,19 @@ public sealed record DelayNextMessageAction(int ExtraDelayMs = 600) : UserAction
 
 public sealed record DropNextMessageAction : UserAction;
 
+// Phase 2: Logical Clocks actions
+public sealed record TriggerLocalEventAction(string ProcessId) : UserAction;
+
+public sealed record SendPeerMessageAction(string SourceId, string TargetId) : UserAction;
+
+// Phase 2: Global Snapshot (Chandy-Lamport) actions
+public sealed record InitiateSnapshotAction(string InitiatorId) : UserAction;
+
+public sealed record SendTransferAction(string SourceId, string TargetId, int Amount = 50) : UserAction;
+
+// Phase 2: Raft Leader Election actions
+public sealed record TriggerElectionTimeoutAction(string NodeId) : UserAction;
+
 public sealed record StepResult(
     bool Executed,
     EventRecord? Event,

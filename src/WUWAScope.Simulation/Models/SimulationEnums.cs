@@ -4,7 +4,10 @@ public enum NodeRole
 {
     Client,
     Coordinator,
-    Worker
+    Worker,
+    Process,
+    Account,
+    RaftServer
 }
 
 public enum NodeHealthStatus
@@ -52,7 +55,14 @@ public enum MessageKind
     TaskDispatch,
     TaskResult,
     Heartbeat,
-    ClientResponse
+    ClientResponse,
+    PeerMessage,
+    Transfer,
+    SnapshotMarker,
+    RequestVote,
+    VoteGranted,
+    VoteDenied,
+    AppendEntries
 }
 
 public enum MessageDeliveryStatus
@@ -67,11 +77,13 @@ public enum EventCategory
     Jobs,
     Network,
     Heartbeats,
-    Faults
+    Faults,
+    Protocol
 }
 
 public enum SimulationEventType
 {
+    // Task Scheduling
     JobSubmitted,
     JobReceived,
     TaskEnqueued,
@@ -90,5 +102,31 @@ public enum SimulationEventType
     TaskRequeued,
     StaleResultIgnored,
     JobFinished,
-    ClientResponded
+    ClientResponded,
+
+    // Logical Clocks (Lamport & Vector)
+    LocalEvent,
+    LogicalMessageSent,
+    LogicalMessageReceived,
+
+    // Global Snapshots (Chandy-Lamport)
+    TransferSent,
+    TransferReceived,
+    SnapshotInitiated,
+    LocalStateRecorded,
+    MarkerSent,
+    MarkerReceived,
+    ChannelClosed,
+    SnapshotCompleted,
+
+    // Raft Leader Election
+    ElectionTimeoutFired,
+    CandidateStartedElection,
+    VoteRequested,
+    VoteGranted,
+    VoteDenied,
+    LeaderElected,
+    LeaderSteppedDown,
+    AppendEntriesSent,
+    AppendEntriesReceived
 }

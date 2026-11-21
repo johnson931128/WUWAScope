@@ -70,6 +70,7 @@ public sealed class IsometricTopologyCanvas : Control
     private DateTime _lastClickTime;
     private string? _lastClickedId;
     private string? _lastActiveNodeId;
+    private string? _lastScenarioId;
 
     public static readonly StyledProperty<SimulationState?> SimulationStateProperty =
         AvaloniaProperty.Register<IsometricTopologyCanvas, SimulationState?>(nameof(SimulationState));
@@ -159,7 +160,19 @@ public sealed class IsometricTopologyCanvas : Control
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == ActiveNodeProperty)
+        if (change.Property == SimulationStateProperty)
+        {
+            var nextScenario = SimulationState?.ScenarioId;
+            if (nextScenario is not null && nextScenario != _lastScenarioId)
+            {
+                _lastScenarioId = nextScenario;
+                _hoveredId = null;
+                _nodeDragOffsets.Clear();
+                _moduleDragOffsets.Clear();
+                FitToView();
+            }
+        }
+        else if (change.Property == ActiveNodeProperty)
         {
             var nextId = ActiveNode?.Id;
             if (nextId != _lastActiveNodeId)
@@ -694,6 +707,22 @@ public sealed class IsometricTopologyCanvas : Control
         {
             DrawFailedIcon(ctx, new Point(c.X, c.Y - 10));
         }
+        else if (node.Role == NodeRole.Process)
+        {
+            DrawClockIcon(ctx, new Point(c.X, c.Y - 11));
+        }
+        else if (node.Role == NodeRole.Account)
+        {
+            DrawAccountLedgerIcon(ctx, new Point(c.X, c.Y - 10));
+        }
+        else if (node.Role == NodeRole.RaftServer && node.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal))
+        {
+            DrawLeaderCrownIcon(ctx, new Point(c.X, c.Y - 11));
+        }
+        else if (node.Role == NodeRole.RaftServer && node.Health == NodeHealthStatus.Suspected)
+        {
+            DrawCandidateBallotIcon(ctx, new Point(c.X, c.Y - 10));
+        }
         else if (isCoord)
         {
             DrawCoordinatorIcon(ctx, new Point(c.X, c.Y - 12));
@@ -705,17 +734,19 @@ public sealed class IsometricTopologyCanvas : Control
 
         DrawCenteredText(ctx, node.Name, new Point(c.X, c.Y + 12), 13.5, InkBrush, FontWeight.Bold);
 
-        var pillText = node.Health == NodeHealthStatus.Processing && node.ActiveTaskCount > 0
-            ? $"{FormatHealthPill(node.Health)} · {node.ActiveTaskCount} task"
-            : FormatHealthPill(node.Health);
+        var pillText = node.Role is NodeRole.Process or NodeRole.Account or NodeRole.RaftServer
+            ? node.StatusSummary
+            : node.Health == NodeHealthStatus.Processing && node.ActiveTaskCount > 0
+                ? $"{FormatHealthPill(node.Health)} · {node.ActiveTaskCount} task"
+                : FormatHealthPill(node.Health);
 
         DrawPillBadge(
             ctx,
             new Point(c.X, c.Y + halfH + depth + 17),
             pillText,
             GetHealthAccentColor(node.Health),
-            fontSize: 11,
-            bold: false);
+            fontSize: 10.8,
+            bold: node.Role == NodeRole.RaftServer && node.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal));
 
         _hitTargets.Add(new HitTarget(node.Id, IsModule: false, new Rect(c.X - halfW, c.Y - halfH, halfW * 2, halfH * 2 + depth + 28)));
     }
@@ -850,12 +881,19 @@ public sealed class IsometricTopologyCanvas : Control
 
             var dotColor = msg.IsDelayed
                 ? WarningAmber
-                : msg.Kind == MessageKind.Heartbeat
-                    ? Color.Parse("#4B8BF5")
-                    : HighlightGreen;
+                : msg.Kind switch
+                {
+                    MessageKind.SnapshotMarker => Color.Parse("#7C4DFF"),
+                    MessageKind.RequestVote => Color.Parse("#7C4DFF"),
+                    MessageKind.VoteGranted => HighlightGreen,
+                    MessageKind.VoteDenied => FailedCoral,
+                    MessageKind.Heartbeat or MessageKind.AppendEntries => Color.Parse("#4B8BF5"),
+                    _ => HighlightGreen
+                };
 
-            var dotRadius = msg.Kind == MessageKind.Heartbeat ? 4.6 : 6.2;
-            var trailRadius = msg.Kind == MessageKind.Heartbeat ? 3.6 : 4.8;
+            var isQuietPing = msg.Kind is MessageKind.Heartbeat or MessageKind.AppendEntries;
+            var dotRadius = isQuietPing ? 4.6 : 6.2;
+            var trailRadius = isQuietPing ? 3.6 : 4.8;
             var dotPen = new Pen(InkBrush, 1.8);
 
             if (msg.IsDelayed)
@@ -867,19 +905,22 @@ public sealed class IsometricTopologyCanvas : Control
             ctx.DrawEllipse(new SolidColorBrush(dotColor), dotPen, ptMain, dotRadius, dotRadius);
         }
 
-        var isVerticalLink = Math.Abs(end.Y - start.Y) > Math.Abs(end.X - start.X) * 1.4;
-        var pillOffset = isVerticalLink
-            ? new Point(curveLabelPos.X + 56, curveLabelPos.Y + 6)
-            : new Point(curveLabelPos.X, curveLabelPos.Y + (isHeartbeat ? 22 : -22));
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            var isVerticalLink = Math.Abs(end.Y - start.Y) > Math.Abs(end.X - start.X) * 1.4;
+            var pillOffset = isVerticalLink
+                ? new Point(curveLabelPos.X + 56, curveLabelPos.Y + 6)
+                : new Point(curveLabelPos.X, curveLabelPos.Y + (isHeartbeat ? 22 : -22));
 
-        DrawPillBadge(
-            ctx,
-            pillOffset,
-            label,
-            isHeartbeat ? Color.Parse("#8B929E") : HighlightGreen,
-            fontSize: 10.5,
-            bold: false,
-            showDot: false);
+            DrawPillBadge(
+                ctx,
+                pillOffset,
+                label,
+                isHeartbeat ? Color.Parse("#8B929E") : HighlightGreen,
+                fontSize: 10.5,
+                bold: false,
+                showDot: false);
+        }
     }
 
     private static void DrawModuleFlowArrow(
@@ -1087,6 +1128,48 @@ public sealed class IsometricTopologyCanvas : Control
         ctx.DrawLine(pen, new Point(center.X + r, center.Y - r), new Point(center.X - r, center.Y + r));
     }
 
+    private static void DrawClockIcon(DrawingContext ctx, Point center)
+    {
+        var pen = new Pen(InkBrush, 1.7, lineCap: PenLineCap.Round);
+        const double r = 10.0;
+        ctx.DrawEllipse(null, pen, center, r, r);
+        ctx.DrawLine(pen, center, new Point(center.X, center.Y - 5.5));
+        ctx.DrawLine(pen, center, new Point(center.X + 4.5, center.Y + 2.5));
+    }
+
+    private static void DrawAccountLedgerIcon(DrawingContext ctx, Point center)
+    {
+        var pen = new Pen(InkBrush, 1.6, lineCap: PenLineCap.Round);
+        ctx.DrawRectangle(null, pen, new Rect(center.X - 11, center.Y - 8, 22, 16), 3, 3);
+        ctx.DrawLine(pen, new Point(center.X - 11, center.Y - 2), new Point(center.X + 11, center.Y - 2));
+        ctx.DrawEllipse(InkBrush, null, new Point(center.X + 5, center.Y + 3), 1.8, 1.8);
+    }
+
+    private static void DrawLeaderCrownIcon(DrawingContext ctx, Point center)
+    {
+        var geo = new StreamGeometry();
+        using (var g = geo.Open())
+        {
+            g.BeginFigure(new Point(center.X - 11, center.Y + 6), true);
+            g.LineTo(new Point(center.X - 11, center.Y - 5));
+            g.LineTo(new Point(center.X - 4, center.Y + 1));
+            g.LineTo(new Point(center.X, center.Y - 8));
+            g.LineTo(new Point(center.X + 4, center.Y + 1));
+            g.LineTo(new Point(center.X + 11, center.Y - 5));
+            g.LineTo(new Point(center.X + 11, center.Y + 6));
+            g.EndFigure(true);
+        }
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FFF4CC")), new Pen(InkBrush, 1.7, lineJoin: PenLineJoin.Round), geo);
+    }
+
+    private static void DrawCandidateBallotIcon(DrawingContext ctx, Point center)
+    {
+        var pen = new Pen(InkBrush, 1.8, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        ctx.DrawLine(pen, new Point(center.X, center.Y + 8), new Point(center.X, center.Y - 8));
+        ctx.DrawLine(pen, new Point(center.X - 6, center.Y - 2), new Point(center.X, center.Y - 8));
+        ctx.DrawLine(pen, new Point(center.X + 6, center.Y - 2), new Point(center.X, center.Y - 8));
+    }
+
     private static void DrawCoordinatorIcon(DrawingContext ctx, Point center)
     {
         var iconPen = new Pen(InkBrush, 1.7);
@@ -1162,9 +1245,27 @@ public sealed class IsometricTopologyCanvas : Control
             return (Color.Parse("#F5C4C0"), Color.Parse("#E4A5A0"), Color.Parse("#D68E88"));
         }
 
-        if (node.Role == NodeRole.Coordinator)
+        if (node.Role == NodeRole.Coordinator ||
+            (node.Role == NodeRole.RaftServer && node.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal)))
         {
             return (Color.Parse("#FAE0A6"), Color.Parse("#EEC87B"), Color.Parse("#E0B55E"));
+        }
+
+        if (node.Role == NodeRole.RaftServer && node.Health == NodeHealthStatus.Suspected)
+        {
+            return (Color.Parse("#FCE0BE"), Color.Parse("#F0C797"), Color.Parse("#E2B17A"));
+        }
+
+        if (node.Role == NodeRole.Process)
+        {
+            return (Color.Parse("#D6F0E4"), Color.Parse("#B9E0CE"), Color.Parse("#9ED0B9"));
+        }
+
+        if (node.Role == NodeRole.Account)
+        {
+            return node.Health == NodeHealthStatus.Processing
+                ? (Color.Parse("#FDE5B8"), Color.Parse("#F1CF8F"), Color.Parse("#E3BA6F"))
+                : (Color.Parse("#D2EBFA"), Color.Parse("#B5DAF2"), Color.Parse("#99C8E8"));
         }
 
         return (Color.Parse("#C9DFFB"), Color.Parse("#AFCBF5"), Color.Parse("#94B6EB"));

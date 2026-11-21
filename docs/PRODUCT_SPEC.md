@@ -1,6 +1,6 @@
 # WUWAScope — Product Specification (v0.2)
 
-- **Status:** Phase 1 complete (First Playable MVP with pure C# deterministic discrete-event engine); Phase 2 theory-linked lessons are next
+- **Status:** Phase 2 complete (4 playable pure-C# scenarios: Task Scheduling, Logical Clocks, Global Snapshots, Teaching Raft); Phase 3 advanced lab tools are next
 - **Tech stack:** Local desktop app built with **C# (.NET) + Avalonia UI**
 - **Project overview:** [README.md](../README.md)
 - **Engineering & agent rules:** [AGENTS.md](../AGENTS.md)
@@ -244,17 +244,15 @@ WUWAScope.slnx
 
 ---
 
-## 9. Future Learning Scenarios (Planned, Not Built Yet)
+## 9. Learning Scenarios Status
 
-Each future lesson will reuse the same C# simulation engine and desktop workspace:
-
-| Topic | What You Will Explore | Theory Reference |
-| --- | --- | --- |
-| **Logical Clocks** | Ordering events without synchronized physical clocks (Lamport & Vector Clocks) | `Distributed-System` notes/01 |
-| **Global Snapshots** | Taking a consistent picture of a running system using Chandy-Lamport markers | `Distributed-System` notes/01 |
-| **Fault Tolerance** | How failure detectors work and why timeouts can be fooled | `Distributed-System` notes/02 |
-| **Paxos / Raft** | Leader election, terms, voting, and reaching agreement despite crashes | `Distributed-System` notes/02 |
-| **Replication, Locks, Gossip, Queues** | Planned only after verified course notes exist | `Distributed-System` notes index |
+| Topic | Simulation Focus | Status | Primary Reading |
+| --- | --- | --- | --- |
+| **Task Scheduling** | 1 Client, 1 Coordinator, 3 Workers; heartbeats, crash failover, stale results | **Implemented (Phase 1)** | `Distributed-System` notes/00 & 02 |
+| **Logical Clocks** | Happens-before ordering, Lamport & Vector Clock updates, concurrency (`∥`) | **Implemented (Phase 2)** | `Distributed-System` notes/01 §3–4 |
+| **Global Snapshots** | Chandy-Lamport FIFO Markers, channel recording (`SC`), `$1,000` conservation | **Implemented (Phase 2)** | `Distributed-System` notes/01 §6 |
+| **Leader Election (Teaching Raft)** | 5-node Terms, randomized timeouts, majority quorum (`3/5`), failover | **Implemented (Phase 2)** | `Distributed-System` notes/02 §4 & §11 |
+| **Network Partitions, Basic Paxos, Replication, Locks, Gossip** | Planned for Phase 3 after verifying notes and invariants | **Planned** | `Distributed-System` notes index |
 
 Never describe planned scenarios as working features.
 

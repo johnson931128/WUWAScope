@@ -4,7 +4,7 @@
 
 WUWAScope is a local desktop app built with **C# and Avalonia UI**. Instead of reading static diagrams and guessing what happens inside a multi-machine system, you can run a live simulation, pause it, step through events one by one, break things on purpose, and look inside any machine to see how it reacts.
 
-> **Project status:** **Phase 1 (First Playable MVP) is complete and runnable locally.** The pure C# deterministic discrete-event engine now drives the **Distributed Task Scheduling** scenario end to end — including Play / Pause / Step / Reset / Speed, smooth state-driven message travel, Cluster → Node → Module drill-down, Worker Crash & Recovery, Heartbeat Timeouts, Task Reassignment, Message Delay / Drop, and Stale Result Rejection. **Phase 2 (Logical Clocks, Global Snapshots, Leader Election)** is next.
+> **Project status:** **Phase 2 (Theory-Linked Distributed Systems Lessons) is complete and runnable locally.** All 4 interactive desktop scenarios run on pure C# deterministic discrete-event engines: **Distributed Task Scheduling**, **Logical Clocks (Lamport & Vector)**, **Global Snapshots (Chandy-Lamport)**, and **Leader Election (Teaching Raft)**. **Phase 3 (Advanced Lab & Experiments)** is planned next.
 
 ## What Makes WUWAScope Different
 
@@ -90,7 +90,7 @@ WUWAScope is a native cross-platform desktop application written in **C# (.NET)*
 - **Phase 3 — Deeper Lab Tools:** Network splits (partitions), custom delay/drop settings, timeline scrubbing, trace export/import, and side-by-side policy comparisons.
 - **Phase 4 — Live Mode (Optional):** Feed events from real local processes into the same visual workspace, clearly separated from Simulated Mode.
 
-## Running Locally (Phase 1 MVP)
+## Running Locally (Phase 2 — 4 Playable Scenarios)
 
 Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on `.NET 10.0.102`).
 
@@ -98,20 +98,28 @@ Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on 
 # Build the entire solution
 dotnet build WUWAScope.slnx
 
-# Run automated unit tests (deterministic engine invariants + ViewModel playback & navigation)
+# Run all 26 automated unit tests (engine invariants + ViewModel navigation & scenario switching)
 dotnet test WUWAScope.slnx
 
 # Launch the local Avalonia desktop app
 dotnet run --project src/WUWAScope.App
 
-# Optional: launch directly into playback or directly inside a machine
-dotnet run --project src/WUWAScope.App -- --autoplay
+# Optional: launch directly into any scenario with autoplay or inside a specific machine
+dotnet run --project src/WUWAScope.App -- --scenario logical-clocks --autoplay
+dotnet run --project src/WUWAScope.App -- --scenario global-snapshots --autoplay
+dotnet run --project src/WUWAScope.App -- --scenario raft-leader-election --autoplay
 dotnet run --project src/WUWAScope.App -- --open-node coordinator
 ```
 
+**Included playable scenarios (switch anytime in the left sidebar):**
+1. **Distributed Task Scheduling** — 1 Client, 1 Coordinator, 3 Workers; heartbeat timeouts, worker crash/recovery, task reassignment, message delay/drop, and stale-result rejection.
+2. **Logical Clocks (Lamport & Vector)** — 3 processes (`P1`, `P2`, `P3`) replaying the verified `notes/01` §3–4 lecture timeline plus interactive local events, message sends, and concurrency (`∥`) detection.
+3. **Global Snapshots (Chandy-Lamport)** — 3 bank accounts (`$500`, `$200`, `$300` = `$1,000` conserved) over strict FIFO channels showing how Markers capture in-flight `$50` transfers in channel states (`SC`).
+4. **Leader Election (Teaching Raft)** — 5 voting servers (`Quorum = 3/5`) demonstrating randomized election timeouts, split votes, higher-term step-down, leader crash failover, and quorum loss safety.
+
 **Controls inside the app:**
 - **Play / Pause (`Space`)**, **Step (`N`)** for one event at a time, **Reset (`R`)**, and **Speed** (`0.5x` – `4.0x`).
-- **Fault experiments:** Click **`+ Submit Job`**, **`⚡ Crash Worker` / `↻ Recover Worker`**, **`⏱ Delay Next Msg`** (triggers timeout retry & stale-result rejection), or **`✕ Drop Next Msg`**.
+- **Scenario actions:** The toolbar adapts automatically to the active lesson (Submit Job / Crash Worker / Local Event / Send Message / Start Snapshot / Send `$50` / Force Timeout / Delay or Drop Next Msg).
 - **2.5D Canvas:** **Single-click** a machine to inspect it, **double-click** (or click `Open Inside Machine →`) to open its 2.5D internal module layout, **drag** machines/modules to rearrange them, **scroll** to zoom, **drag empty space** to pan, and press **`Esc`** to step back up one level without losing simulation state.
 - Use **Hide Menu / Hide Details / Hide Timeline** in the top-right to maximize the 2.5D canvas.
 

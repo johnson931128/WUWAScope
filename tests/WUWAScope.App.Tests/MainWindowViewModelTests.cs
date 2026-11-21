@@ -205,4 +205,37 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(0, vm.CurrentState.Metrics.ArmedDelayCount);
         Assert.Equal(0, vm.CurrentState.Metrics.ArmedDropCount);
     }
+
+    [Fact]
+    public void ScenarioSwitching_LoadsAllFourLessonsWithCorrectTopologyAndActions()
+    {
+        var vm = new MainWindowViewModel(new DiscreteEventSimulationEngine(seed: 42));
+        Assert.Equal("task-scheduling", vm.CurrentState.ScenarioId);
+        Assert.Equal(5, vm.ClusterNodes.Count);
+
+        // Switch to Logical Clocks (3 processes)
+        vm.SelectScenarioCommand.Execute("logical-clocks");
+        Assert.Equal("logical-clocks", vm.CurrentState.ScenarioId);
+        Assert.Equal(3, vm.ClusterNodes.Count);
+        Assert.Contains("Local Event", vm.Action1Label);
+        Assert.False(vm.ShowAction4);
+        vm.StepSimulationCommand.Execute(null);
+        Assert.Single(vm.CurrentState.EventLog);
+
+        // Switch to Global Snapshots (3 accounts)
+        vm.SelectScenarioCommand.Execute("global-snapshots");
+        Assert.Equal("global-snapshots", vm.CurrentState.ScenarioId);
+        Assert.Equal(3, vm.ClusterNodes.Count);
+        Assert.Contains("Snapshot", vm.Action1Label);
+        vm.StepSimulationCommand.Execute(null);
+        Assert.Single(vm.CurrentState.EventLog);
+
+        // Switch to Raft Leader Election (5 servers)
+        vm.SelectScenarioCommand.Execute("raft-leader-election");
+        Assert.Equal("raft-leader-election", vm.CurrentState.ScenarioId);
+        Assert.Equal(5, vm.ClusterNodes.Count);
+        Assert.True(vm.ShowAction4);
+        vm.StepSimulationCommand.Execute(null);
+        Assert.Single(vm.CurrentState.EventLog);
+    }
 }

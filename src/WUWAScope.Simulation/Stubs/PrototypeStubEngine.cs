@@ -27,27 +27,27 @@ public static class ScenarioCatalog
         new ScenarioDescriptor(
             Id: "logical-clocks",
             Title: "Logical Clocks (Lamport & Vector)",
-            ShortSummary: "Order events across machines without synchronized wall clocks.",
-            IsAvailable: false,
-            TheoryNoteTitle: "Logical Clocks, Global States & Checkpointing",
+            ShortSummary: "Order events across 3 processes without synchronized wall clocks, and tell causality (a → b) apart from concurrency (a ∥ b).",
+            IsAvailable: true,
+            TheoryNoteTitle: "Chapter 01 — Logical Clocks & Vector Clocks",
             TheoryNoteUrl: LogicalClocksUrl,
-            SimplificationsNote: "Planned for Phase 2 after Task Scheduling MVP is complete."),
+            SimplificationsNote: "Teaching model based on Distributed-System notes/01 §3–4: fixed 3-process group (P1, P2, P3), reliable FIFO links, no process restarts or hidden side channels."),
         new ScenarioDescriptor(
             Id: "global-snapshots",
             Title: "Global Snapshots (Chandy-Lamport)",
-            ShortSummary: "Capture a consistent system snapshot using marker messages while work keeps running.",
-            IsAvailable: false,
-            TheoryNoteTitle: "Logical Clocks, Global States & Checkpointing",
+            ShortSummary: "Capture a consistent snapshot of 3 bank accounts ($1,000 total) using Marker messages while $50 transfers are still in flight.",
+            IsAvailable: true,
+            TheoryNoteTitle: "Chapter 01 — Chandy-Lamport Distributed Snapshot",
             TheoryNoteUrl: LogicalClocksUrl,
-            SimplificationsNote: "Planned for Phase 2."),
+            SimplificationsNote: "Teaching model based on Distributed-System notes/01 §6: reliable FIFO channels with no node crashes during a snapshot. Demonstrates why recorded local balances + recorded in-flight channels conserve total money ($1,000)."),
         new ScenarioDescriptor(
             Id: "raft-leader-election",
             Title: "Leader Election (Teaching Raft)",
-            ShortSummary: "See how election timeouts, terms, and majority votes pick a new leader when one crashes.",
-            IsAvailable: false,
-            TheoryNoteTitle: "Fault Tolerance, Paxos & Raft",
+            ShortSummary: "Watch 5 voting servers elect a Leader with randomized timeouts, Terms, and majority quorums (3 of 5), and fail over when the Leader crashes.",
+            IsAvailable: true,
+            TheoryNoteTitle: "Chapter 02 — Fault Tolerance & Raft Leader Election",
             TheoryNoteUrl: FaultToleranceUrl,
-            SimplificationsNote: "Planned for Phase 2.")
+            SimplificationsNote: "Teaching model based on Distributed-System notes/02 §11.1–11.2: focuses on Terms, randomized election timeouts, RequestVote, majority quorum (3/5), higher-term step-down, and crash/recovery. Full log replication and membership changes are intentionally omitted.")
     ];
 }
 

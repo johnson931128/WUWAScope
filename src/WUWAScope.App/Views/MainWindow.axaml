@@ -98,25 +98,22 @@
 
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
             <Button Classes="pill"
-                    Content="+ Submit Job"
-                    Command="{Binding SubmitJobCommand}"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Submit a new job from the Client into the cluster." />
+                    Content="{Binding Action1Label}"
+                    Command="{Binding ExecuteAction1Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
             <Button Classes="pill"
-                    Content="{Binding TargetWorkerActionLabel}"
-                    Command="{Binding ToggleCrashTargetWorkerCommand}"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Crash or recover the selected worker (or the currently busy worker) to test heartbeat timeouts and failover." />
+                    Content="{Binding Action2Label}"
+                    Command="{Binding ExecuteAction2Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
             <Button Classes="pill"
-                    Content="{Binding DelayActionLabel}"
-                    Command="{Binding DelayNextMessageCommand}"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Delay the next job/task/result message by +2600 ms to observe retries and stale reply rejection." />
+                    Content="{Binding Action3Label}"
+                    Command="{Binding ExecuteAction3Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
             <Button Classes="pill"
-                    Content="{Binding DropActionLabel}"
-                    Command="{Binding DropNextMessageCommand}"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Drop the next job/task/result message in flight to observe timeout recovery." />
+                    Content="{Binding Action4Label}"
+                    Command="{Binding ExecuteAction4Command}"
+                    IsVisible="{Binding ShowAction4}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
           </StackPanel>
 
           <TextBlock Grid.Column="3"
@@ -141,21 +138,26 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="10" Spacing="12">
 
-            <!-- Scenarios Section -->
+            <!-- Scenarios Section (Clickable Lesson Switcher) -->
             <StackPanel Spacing="4">
               <TextBlock Text="SCENARIOS" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource MutedInkBrush}" />
-              <ItemsControl ItemsSource="{Binding Scenarios}">
+              <ItemsControl ItemsSource="{Binding ScenarioItems}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="contracts:ScenarioDescriptor">
-                    <Border Margin="0,0,0,4"
+                  <DataTemplate x:DataType="vm:ScenarioListItem">
+                    <Button Margin="0,0,0,4"
                             Padding="8,6"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch"
                             CornerRadius="9"
                             Background="{StaticResource PanelSubtleBgBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}"
-                            BorderThickness="1">
+                            BorderThickness="1.2"
+                            Cursor="Hand"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectScenarioCommand}"
+                            CommandParameter="{Binding Descriptor.Id}">
                       <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0"
-                                   Text="{Binding Title}"
+                                   Text="{Binding Descriptor.Title}"
                                    FontWeight="SemiBold"
                                    FontSize="12"
                                    TextWrapping="Wrap"
@@ -165,25 +167,14 @@
                                 Padding="6,1"
                                 Margin="6,0,0,0"
                                 VerticalAlignment="Center"
-                                Background="#FFFFFF"
-                                BorderBrush="{StaticResource PanelBorderBrush}"
-                                BorderThickness="1"
-                                IsVisible="{Binding !IsAvailable}">
-                          <TextBlock Text="Planned" FontSize="9.5" Foreground="{StaticResource MutedInkBrush}" />
-                        </Border>
-                        <Border Grid.Column="1"
-                                CornerRadius="8"
-                                Padding="6,1"
-                                Margin="6,0,0,0"
-                                VerticalAlignment="Center"
                                 Background="#E9F7EF"
                                 BorderBrush="#2E9E63"
                                 BorderThickness="1"
-                                IsVisible="{Binding IsAvailable}">
+                                IsVisible="{Binding IsSelected}">
                           <TextBlock Text="Active" FontSize="9.5" FontWeight="Bold" Foreground="#1F7A49" />
                         </Border>
                       </Grid>
-                    </Border>
+                    </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -602,6 +593,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
               <TextBlock Text="EVENT TIMELINE" FontSize="11.5" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,4,0" />
               <Button Classes="chip" Content="All" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="All" />
+              <Button Classes="chip" Content="Protocol" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Protocol" />
               <Button Classes="chip" Content="Jobs" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Jobs" />
               <Button Classes="chip" Content="Network" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Network" />
               <Button Classes="chip" Content="Heartbeats" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Heartbeats" />
