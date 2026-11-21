@@ -1,249 +1,270 @@
-# WUWAScope — Product Specification (v0.1)
+# WUWAScope — Product Specification (v0.2)
 
-Status: **Design proposal / not implemented**
-Source of truth for project intent: README.md
-Agent implementation rules: AGENTS.md
-Primary theory reference: https://github.com/johnson931128/Distributed-System
-Interaction inspiration: https://designed-to-scale.vercel.app/#/request-lifecycle/3
+- **Status:** Design specification (not implemented yet)
+- **Tech stack:** Local desktop app built with **C# (.NET) + Avalonia UI**
+- **Project overview:** [README.md](../README.md)
+- **Engineering & agent rules:** [AGENTS.md](../AGENTS.md)
+- **Theory reference:** https://github.com/johnson931128/Distributed-System
+- **Interaction inspiration:** https://designed-to-scale.vercel.app/#/request-lifecycle/3
 
-## 1. Product statement
+---
 
-WUWAScope is a browser-based **interactive visual simulator for distributed systems**. Its defining interaction is **zooming from a cluster into a node and then into its internal modules**, while the same event engine continues to control the simulation.
+## 1. What WUWAScope Is
 
-The product answers:
-- What happens when a client submits work to a coordinator?
-- Which messages are in flight, waiting, lost, retried, or acknowledged?
-- Why did a scheduler choose a particular worker?
-- What changes inside a node when a message arrives?
-- What fails when a worker crashes, and what exactly restores progress?
-- How does an abstract distributed-system principle correspond to observable events?
+WUWAScope is a **local desktop app for visually simulating distributed systems**. Its core idea is simple: you can **zoom from a whole cluster into a single machine, and then into the parts inside that machine**, while one shared simulation engine keeps everything running consistently in the background.
 
-**Not in MVP:** actual networked processes, a hosted SaaS backend, container orchestration, production telemetry, full Raft/Paxos, or arbitrary user-authored topologies.
+The app helps you see and answer practical questions:
+- What actually happens step by step when a Client sends work to a Coordinator?
+- Which messages are currently in transit, waiting, dropped, delayed, or retried?
+- Why did the Scheduler pick Worker 2 instead of Worker 1?
+- What changes inside a machine the moment a message arrives?
+- When a Worker crashes, how does the system notice, and how does the unfinished task recover?
+- How do abstract distributed-systems concepts connect to real, observable events?
 
-## 2. Primary target
+**Out of scope for MVP:** real networked servers, cloud hosting, Kubernetes/container orchestration, live server monitoring, full production Raft/Paxos, or a drag-and-drop custom cluster builder.
 
-A learner with basic operating systems, networking and programming knowledge who wants to reason through distributed message flows, node internals, scheduling and fault tolerance visually.
+---
 
-The first release should also serve as a strong interactive engineering portfolio demonstration: runnable, testable, replayable, and technically accurate.
+## 2. Who It Is For
 
-## 3. Information architecture
+- Learners with basic programming and networking familiarity who want a clear, visual way to understand distributed message flows, scheduling, and failure recovery without wading through walls of dense jargon.
+- Engineers who want a clean, runnable, testable, and repeatable local desktop lab that demonstrates distributed systems accurately.
 
-### 3.1 Main workspace
+---
 
-| Region | Required elements | Core interaction |
+## 3. App Layout and Navigation
+
+### 3.1 Main Desktop Window
+
+| Area | What Goes Here | Main Actions |
 | --- | --- | --- |
-| Header | Project / scenario title, simulated/live mode badge | Switch scenario; know which mode is active |
-| Simulation toolbar | Play, Pause, Step, Reset, speed slider | Control **one** shared engine clock |
-| Scenario sidebar | Job Scheduling (available), other scenarios (planned/disabled) | Select scenario; read objective and assumptions |
-| Cluster canvas | Client, Coordinator, 3 Workers, directional links | Select node, select message, zoom and pan |
-| Inspector | Overview / Queue / Modules / Events | Inspect selected node with live simulation state |
-| Timeline | Ordered event rows, sim time, source → target, category | Select event and highlight its causal path |
-| Context/explanation | Short description + deep links to theory | Explain the current event / state change |
+| **Header** | App & scenario title, clear `SIMULATED` mode badge | Switch scenarios; always know you are in simulation mode |
+| **Playback toolbar** | Play, Pause, Step, Reset, speed slider, fault buttons | Control **one** shared simulation clock |
+| **Left sidebar** | Scenario list (Task Scheduling active; others marked Planned), machine list | Pick a scenario; read its goal and simplifications |
+| **Center canvas** | Interactive diagram of Client, Coordinator, and 3 Workers with directional links | Click nodes or messages, zoom in/out, pan around |
+| **Right inspector** | Tabs for Overview, Queue, Modules, and Events | Inspect live state of whichever cluster, node, or module is selected |
+| **Bottom timeline** | Ordered list of events with simulated time, sender → receiver, and category | Filter events; click an event to highlight its path and inspect details |
+| **Explanation panel** | Short plain-English explanation + links to course theory notes | Understand *why* the current step happened |
 
-### 3.2 Drill-down model
+### 3.2 Three-Level Drill-Down (Cluster → Node → Module)
 
-**Level A — Cluster:**
-- Visual topology, connection direction, node role/status, message travel and task allocation.
-- Click Coordinator → its Node View; click Worker 2 → Worker 2's Node View.
-- Hover a message to see sender, recipient, type, ID and attempt.
+**Level 1 — Cluster View (Whole System):**
+- Shows all machines, how they connect, each machine's current status, messages moving along links, and which worker is running which task.
+- Clicking **Coordinator** opens the Coordinator's Node View; clicking **Worker 2** opens Worker 2's Node View.
+- Hovering over a moving message shows who sent it, who it is going to, its type, ID, and attempt number.
 
-**Level B — Node:**
-- An interactive diagram of that node's logical modules.
-- Coordinator: Request Handler → Job Queue → Scheduler → Outbox; Heartbeat Monitor → Worker Registry; Result Handler.
-- Worker: Inbox → Task Executor → Result Outbox; Heartbeat Emitter; Local Task State.
-- Display active module, queue contents, task IDs, state transitions, and pending events.
-- Navigate back to cluster without resetting the simulation.
+**Level 2 — Node View (Inside One Machine):**
+- Shows an interactive diagram of the logical parts inside that specific machine:
+  - **Coordinator:** `Request Handler` → `Job Queue` → `Scheduler` → `Outbox`; `Heartbeat Monitor` → `Worker Registry`; `Result Handler`.
+  - **Worker:** `Inbox` → `Task Executor` → `Result Outbox`; `Heartbeat Sender`; `Local Task State`.
+  - **Client:** `Job Submitter` → `Outbox`; `Response Inbox` → `Job Tracker`.
+- Highlights whichever part is currently active and shows waiting items, task IDs, and state changes.
+- Includes a clear breadcrumb bar (e.g., `Cluster / Coordinator / Scheduler`) so you can jump back out at any time **without resetting or pausing the simulation**.
 
-**Level C — Module:**
-- Show active state, inputs, outputs, relevant counters, pending queue entries, and recent events.
-- Selecting an event in the global timeline should focus its related module where supported.
-- Details may appear in a focused module pane; an actual nested operating system/process emulator is out of scope.
+**Level 3 — Module View (Inside One Internal Part):**
+- Shows that module's current state, recent inputs and outputs, queue entries, counters, and related events.
+- Clicking an event in the bottom timeline focuses the related machine and module whenever possible.
+- This is a clean logical inspection view — we are not trying to emulate a real operating system kernel or CPU threads.
 
-The UI must remain synchronized if the simulation advances while a node/module is inspected.
+All three views stay live and in sync as the simulation advances.
 
-## 4. Visual direction
+---
 
-Reference interaction: Designed to Scale uses a guided progression through architecture concepts with animated connections. WUWAScope should adopt the **clarity of step-driven visual explanation**, while building its own component language, spacing, typographic system, diagrams and colors.
+## 4. Visual Style and Usability
 
-Visual proposal:
-- Quiet dark-slate background and high-contrast information cards; optional light theme later.
-- Center-stage diagrams with restrained motion and clearly indicated direction.
-- Node styling differentiates roles, not random colors.
-- Event states use both text/icons and color; avoid color-only communication.
-- Status labels: Idle, Queued, Processing, Healthy, Suspected, Failed, Recovering.
-- Play/pause controls remain visible throughout drill-down.
-- Timeline stays legible at desktop widths; panels may collapse on narrow screens.
+WUWAScope borrows the **clear, step-by-step visual storytelling** feel of *Designed to Scale*, while using its own native desktop layout, colors, and diagrams.
 
-Do not copy reference-site assets or try to imitate a screenshot pixel-for-pixel. The requested original interaction — a navigable view of **server internals** — should distinguish WUWAScope.
+- **Clean dark engineering theme:** Calm dark-slate background with high-contrast cards so active nodes and moving messages stand out clearly. (A light theme can be added later.)
+- **Calm, purposeful motion:** Animations show real message movement and state changes — no distracting decorative effects.
+- **Role-based styling:** Client, Coordinator, and Workers have distinct, consistent visual identities.
+- **Never rely on color alone:** Every status uses both a clear text badge/icon and a distinct color.
+- **Standard status labels:** `Idle`, `Queued`, `Processing`, `Healthy`, `Suspected`, `Failed`, `Recovering`.
+- **Always-visible playback controls:** Play, Pause, Step, and Reset stay accessible whether you are viewing the Cluster, a Node, or a Module.
+- **Desktop ergonomics:** Supports keyboard navigation, clear focus rings, crisp HiDPI scaling (Skia vector rendering in Avalonia), and collapsible side/bottom panels on smaller windows.
 
-## 5. MVP scenario: Coordinator / Worker task scheduling
+---
 
-Topology:
-- Client × 1
-- Coordinator × 1
-- Worker × 3
-- Logical result storage is optional and should not imply a physical database
+## 5. MVP Scenario: Coordinator & Workers Task Scheduling
 
-Suggested teaching-friendly configuration:
-- One job containing one or several independent tasks.
-- Coordinator maintains a queue and a registry of available workers.
-- A scheduler assigns tasks to healthy workers with capacity.
-- A simulated network delivers messages with configurable delay/drop rules.
-- Workers execute tasks using scheduled completion events.
-- Workers emit periodic heartbeats; coordinator detects absence via a timeout.
-- Each dispatch carries an attempt ID; stale completions do not replace a newer accepted result.
+**Machines in this scenario:**
+- 1 Client
+- 1 Coordinator
+- 3 Workers (`Worker 1`, `Worker 2`, `Worker 3`)
+- *(Optional later: a simple logical Result Store — clearly marked as logical, not a real database.)*
 
-This is a **teaching model of scheduling and fault recovery**, not a claim to implement a particular production framework.
+**How this teaching model works:**
+- The Client submits a Job containing one or more independent Tasks.
+- The Coordinator keeps a waiting Task Queue and a Worker Registry (a list of which workers are alive and free).
+- The Scheduler assigns waiting tasks to healthy workers that have free capacity.
+- A simulated network delivers messages with configurable travel time (and optional delay or packet drop).
+- Workers execute tasks and schedule a completion event after a simulated work duration.
+- Workers regularly send **heartbeats** (short "I'm still alive" messages). If heartbeats stop arriving for too long, the Coordinator marks that worker as timed out.
+- Every time a task is sent to a worker, it gets a new **Attempt ID / generation number** (like Attempt 1, Attempt 2). If a slow, outdated reply from Attempt 1 arrives after Attempt 2 already finished, the Coordinator ignores the old reply.
 
-### 5.1 Happy path
+> **Teaching simplification:** This model teaches scheduling, heartbeat timeouts, retries, and stale-reply protection. It does not claim to replicate any specific production framework (like Spark or Kubernetes).
 
-1. Client submits Job J1.
-2. Coordinator receives J1 and creates Task T1.
-3. T1 appears in Coordinator Queue.
-4. Scheduler selects Worker W1 and dispatches T1 with Attempt A1.
-5. Message traverses the topology link and arrives at W1.
-6. W1 moves T1 into Running, then produces a completion event.
-7. Result message returns to Coordinator.
-8. Coordinator accepts a terminal result and responds to Client.
+### 5.1 Normal Flow (Happy Path)
 
-Each numbered action must be observable through a combination of canvas highlighting, module inspection and timeline entries. Event splitting may be finer as long as transitions remain consistent.
+1. Client submits Job `J1`.
+2. Coordinator receives `J1` and creates Task `T1`.
+3. `T1` enters the Coordinator's Task Queue.
+4. Scheduler chooses `Worker 1` and dispatches `T1` as **Attempt `A1`**.
+5. The dispatch message travels across the link and arrives at `Worker 1`.
+6. `Worker 1` marks `T1` as `Processing`, runs it, and finishes execution.
+7. `Worker 1` sends the Result message back to the Coordinator.
+8. Coordinator accepts `A1` as the final result and sends the response back to the Client.
 
-### 5.2 Fault path
+Every step must be visible through canvas highlights, module updates, and timeline entries.
 
-1. Submit work and begin execution.
-2. Crash a selected Worker (for example W1).
-3. Show an explicit failure or absence-of-heartbeat interval; do not instantly reassign without a detection policy.
-4. Coordinator times out and marks the relevant attempt lost.
-5. T1 returns to a queue and is dispatched to W2 with Attempt A2.
-6. W2 completes; Coordinator accepts A2.
-7. If A1 later surfaces, label it stale and ignore it.
-8. Recovery returns W1 to eligible state only under defined conditions.
+### 5.2 Failure Flow (Fault Path)
 
-Controls: **Crash / Recover Worker**, optionally **Delay / Drop Next Message**, Reset, and playback speed.
+1. Submit a job and let `Worker 1` start working on Task `T1` (`Attempt A1`).
+2. Trigger **Crash Worker 1** (or **Delay Next Message** to simulate a stalled worker/network).
+3. Time moves forward — the Coordinator does **not** magically know instantly. Instead, expected heartbeats from `Worker 1` fail to arrive.
+4. Once the heartbeat timeout expires, the Coordinator marks `Worker 1` as timed out and marks `Attempt A1` as lost.
+5. Task `T1` goes back into the waiting queue and is dispatched to `Worker 2` as **Attempt `A2`**.
+6. `Worker 2` finishes and sends back the result; the Coordinator accepts `A2`.
+7. If `A1`'s late result arrives afterward (for example, after a delayed message finally delivers), the Coordinator labels it **stale** and ignores it.
+8. Triggering **Recover Worker 1** brings `Worker 1` back online cleanly so it can accept future tasks.
 
-### 5.3 Event vocabulary (initial proposal)
+**User failure controls:** `Crash / Recover Worker`, `Delay Next Message`, `Drop Next Message`, `Reset`, and `Playback Speed`.
 
-- JOB_SUBMITTED, JOB_RECEIVED, TASK_ENQUEUED
-- TASK_DISPATCHED, MESSAGE_SENT, MESSAGE_DELIVERED, MESSAGE_DROPPED
-- TASK_STARTED, TASK_EXECUTION_FINISHED, RESULT_RECEIVED
-- HEARTBEAT_SENT, HEARTBEAT_RECEIVED, WORKER_TIMED_OUT
-- WORKER_CRASHED, WORKER_RECOVERED, TASK_REQUEUED
-- STALE_RESULT_IGNORED, JOB_FINISHED, CLIENT_RESPONDED
+### 5.3 Event Names (Initial Vocabulary)
 
-Events must have stable identifiers, simulation time, type, source/target, and structured payload where relevant. Internal engine events and messages on the network may be distinct domain types.
+- **Job & Queue:** `JOB_SUBMITTED`, `JOB_RECEIVED`, `TASK_ENQUEUED`
+- **Dispatch & Network:** `TASK_DISPATCHED`, `MESSAGE_SENT`, `MESSAGE_DELIVERED`, `MESSAGE_DROPPED`
+- **Execution & Results:** `TASK_STARTED`, `TASK_EXECUTION_FINISHED`, `RESULT_RECEIVED`, `STALE_RESULT_IGNORED`
+- **Health & Failures:** `HEARTBEAT_SENT`, `HEARTBEAT_RECEIVED`, `WORKER_CRASHED`, `WORKER_TIMED_OUT`, `WORKER_RECOVERED`, `TASK_REQUEUED`
+- **Completion:** `JOB_FINISHED`, `CLIENT_RESPONDED`
 
-## 6. Simulation model
+Every recorded event includes a unique ID, simulated timestamp, sequence number, event type, source/target (when applicable), cause ID (what triggered it), and structured details.
 
-### 6.1 Engine contract
+---
 
-Proposed minimal API:
-- createSimulation(scenarioConfig, seed)
-- getState()
-- step() → next event plus state snapshot/result
-- reset()
-- dispatchAction(action) → queue external user action into deterministic order
-- subscribe(listener) or adapter for view updates
+## 6. How the Simulation Engine Works
 
-An event queue orders by (simulated timestamp, monotonically increasing sequence). The engine is pure and independent of display frame rate; UI timers may only decide *when* to call step(), not what the next state transition means.
+### 6.1 Engine Interface (Pure C#, No UI Code)
 
-### 6.2 Core entities
+The simulation engine lives in its own C# library with zero references to Avalonia or any UI framework. Minimal contract:
 
-- Node: id, role, health, capacity, module states, inbox/outbox.
-- Link: source, target, configured delay/drop behavior.
-- Job: id, task IDs, derived status.
-- Task: id, current status, assigned worker, current attempt.
-- Attempt: id, task ID, worker ID, generation, status.
-- Message: id, kind, source/target, task/attempt reference, simulated send/delivery timestamps.
-- Event: id, timestamp, sequence, type, details and cause/correlation IDs.
+- `CreateSimulation(ScenarioConfig config, int seed)` — creates a fresh simulation with a repeatable random seed.
+- `GetState()` — returns the current read-only snapshot of all machines, links, messages, jobs, tasks, and metrics.
+- `Step()` — processes **exactly one** next event from the queue and returns the event record plus updated state.
+- `Reset()` — restores the exact starting state using the same config and seed.
+- `DispatchAction(UserAction action)` — queues a user action (like "Submit Job" or "Crash Worker 1") into the simulation timeline in a repeatable order.
+- `StateChanged` event / observable notification — lets the desktop UI refresh cleanly whenever state changes.
 
-MVP may derive most UI information from engine state and event log; avoid multiple mutable copies of the same truth.
+**Clock & Animation rule:**
+- The engine orders queued events strictly by `(SimulatedTimeMs, SequenceNumber)`.
+- The engine knows nothing about frame rates or real-world wall-clock time.
+- During **Play**, the UI advances a visual playback clock smoothly so in-flight messages glide across links between their `SentAt` and `DeliverAt` timestamps, calling `Step()` at the exact simulated time each event happens. Changing playback speed only changes how fast the visual clock moves — never the order or outcome of events.
 
-### 6.3 Behavioral invariants
+### 6.2 Core Data Models
 
-- Exactly one terminal **accepted result** per task in the simulator (not exactly-once execution).
-- Retry creates a new attempt generation and cannot accept a stale earlier attempt as authoritative.
-- Crashed workers do not begin new task execution.
-- Pending + running + terminal counts equal known tasks by the documented status model.
-- Step processes exactly one queued event and exposes its effects.
-- Pause leaves simulated time unchanged until Step or Play.
-- Reset restores the same start state/configuration/seed.
-- Replay with the same external actions and seed produces the same event trace.
+- **Node:** `Id`, `Role` (`Client`, `Coordinator`, `Worker`), `Health`, `Capacity`, internal module states, inbox/outbox lists.
+- **Link:** `SourceNodeId`, `TargetNodeId`, configured simulated latency, optional delay/drop rule.
+- **Job:** `Id`, list of `TaskIds`, overall status.
+- **Task:** `Id`, current status, assigned worker, active attempt ID, accepted attempt ID (if finished).
+- **Attempt:** `Id`, `TaskId`, `WorkerId`, `Generation` (1, 2, 3...), status (`Dispatched`, `Running`, `Completed`, `Lost`, `StaleIgnored`).
+- **Message:** `Id`, `Kind`, `SourceNodeId`, `TargetNodeId`, related task/attempt IDs, `SentAtMs`, `DeliverAtMs`, status (`InFlight`, `Delivered`, `Dropped`).
+- **EventRecord:** `Id`, `TimestampMs`, `Sequence`, `Type`, `SourceNodeId`, `TargetNodeId`, `ModuleId`, `CauseEventId`, and structured payload.
 
-### 6.4 Metrics
+The UI derives everything from engine state and the event log — no duplicate copies of truth scattered across view files.
 
-MVP may show job duration (simulated milliseconds), queue depth, number of dispatched tasks, retry count, message count, and worker utilization derived from simulated busy intervals.
+### 6.3 Rules That Must Always Hold (Invariants)
 
-All values must be visibly labeled **Simulated**. Do not display invented CPU percentages, real P99 latency, memory usage or measured throughput.
+These are guarantees of our simulation model (not claims that real networks provide free exactly-once delivery):
 
-## 7. Suggested repository architecture (once implementation begins)
+1. Each task can have **at most one accepted final result**.
+2. A retry always increases the attempt generation number, and an older attempt can never overwrite a newer accepted result.
+3. A crashed worker never starts new work or receives new assignments until it recovers.
+4. Task counters (`Pending + Running + Completed/Failed`) always match the exact engine state.
+5. `Step()` processes exactly one event and makes its effect visible.
+6. `Pause` completely freezes simulated time until you press `Step` or `Play`.
+7. `Reset()` restores the exact initial state for the same scenario and seed.
+8. Running the same scenario, seed, and user actions again produces the **exact same event log**.
 
-    src/
-      app/                 application shell, route and layout
-      simulation/          typed engine, clock, event queue, state machine
-      scenarios/           task-scheduling configuration and scenarios
-      components/          reusable toolbar, navigation, panels, dialogs
-      features/cluster/    topology and message visualization
-      features/inspector/  cluster/node/module inspectors
-      features/timeline/   event trace and timeline
-      styles/              design tokens and app styling
-    tests/
-      simulation/          deterministic engine and failure tests
-      ui/                  important interactions
-    docs/
-      PRODUCT_SPEC.md
+### 6.4 Simulated Metrics
 
-This is a recommended future structure. Do not create empty folders just to match this diagram.
+The MVP can display:
+- Job duration (simulated milliseconds)
+- Coordinator queue depth
+- Dispatched tasks count
+- Retry count
+- Total messages sent / dropped
+- Worker busy percentage (calculated directly from simulated busy time vs total simulated time)
 
-## 8. Acceptance criteria
+Every metric must clearly show a **Simulated** label. Never invent fake CPU%, memory MB, or real-world P99 latency numbers.
 
-### Phase 0 — Interactive shell
+---
 
-- [ ] App boots locally using documented commands.
-- [ ] All 5 cluster nodes are visible with labeled roles.
-- [ ] Nodes can be selected and highlighted.
-- [ ] Node selection opens the correct internally structured inspector.
-- [ ] A module is selectable, and its contextual details differ per module.
-- [ ] Cluster/Node/Module navigation works without losing current view unexpectedly.
-- [ ] Playback UI exists; nonfunctional features are disabled or explicitly called prototypes.
-- [ ] Narrow view remains usable; no essential actions are obscured.
-- [ ] README lists actual runnable commands only after validation.
+## 7. Planned Project Structure (C# + Avalonia UI)
 
-### Phase 1 — First real simulation
+```text
+WUWAScope.sln
+  src/
+    WUWAScope.Simulation/       # Pure C# engine: clock, event queue, models, state machines, scenarios
+    WUWAScope.App/              # Avalonia UI desktop app (Views, ViewModels, Canvas, Inspector, Timeline, Styles)
+  tests/
+    WUWAScope.Simulation.Tests/ # xUnit tests for event ordering, replays, retries, timeouts, stale results
+    WUWAScope.App.Tests/        # ViewModel & Avalonia headless UI interaction tests
+  docs/
+    PRODUCT_SPEC.md
+```
 
-- [ ] Stable, deterministic event queue independent of UI animation.
-- [ ] Happy path completes with a traceable timeline and visible message movements.
-- [ ] Inspector modules show actual queues and states as events advance.
-- [ ] Pause blocks engine progression; Step processes exactly one event.
-- [ ] Reset and deterministic replay pass unit tests.
-- [ ] Crashing a worker triggers a documented detection/retry flow.
-- [ ] A healthy worker completes a requeued task.
-- [ ] Late results from stale attempts are safely ignored.
-- [ ] Queue/task counters reconcile with engine state.
-- [ ] At least one automated test covers normal completion and one covers worker failure.
-- [ ] Simulated metrics are identifiable and reproducible.
+*This is the planned layout once implementation starts. Do not create empty placeholder folders just to match this tree.*
 
-## 9. Future learning modules (not implemented)
+---
 
-These should be built as separate scenario definitions using a shared engine / visual vocabulary.
+## 8. Acceptance Checklists
 
-| Topic | Future simulation focus | Primary reading |
+### Phase 0 — Interactive Desktop Shell
+
+- [ ] App builds and launches locally as a desktop window using documented `dotnet` commands.
+- [ ] All 5 cluster nodes (`Client`, `Coordinator`, `Worker 1`, `Worker 2`, `Worker 3`) appear with clear role labels and connecting links.
+- [ ] Clicking any node highlights it and updates the inspector.
+- [ ] Entering a node shows its role-specific internal modules (Coordinator modules differ from Worker modules).
+- [ ] Clicking different modules shows different, relevant details for each module.
+- [ ] Moving between Cluster, Node, and Module views works smoothly with a clear way back and does not lose state unexpectedly.
+- [ ] Playback toolbar and fault controls exist; controls not yet hooked to the Phase 1 engine are disabled or clearly marked as prototype/stub.
+- [ ] Resizing the desktop window keeps core controls usable without clipping or hiding essential actions.
+- [ ] `README.md` lists real, locally verified build/run/test commands.
+
+### Phase 1 — First Working Simulator (MVP)
+
+- [ ] Pure C# deterministic event queue runs independently of the Avalonia UI loop.
+- [ ] Happy path finishes end to end with smooth message movement and a clear event timeline.
+- [ ] Node and Module views show live queues and state updates as events fire.
+- [ ] Pause freezes simulated time; Step advances exactly one event.
+- [ ] Reset and repeatable replay pass automated unit tests.
+- [ ] Crashing a worker triggers heartbeat timeout detection, marks the attempt lost, and requeues the task.
+- [ ] A healthy worker picks up and finishes the requeued task.
+- [ ] Late replies from old attempts are marked stale and safely ignored.
+- [ ] Queue and task counters always match engine state.
+- [ ] Automated tests cover at least one full happy path, one worker crash/reassignment path, and stale-result rejection.
+- [ ] All displayed metrics are clearly marked **Simulated** and reproducible.
+
+---
+
+## 9. Future Learning Scenarios (Planned, Not Built Yet)
+
+Each future lesson will reuse the same C# simulation engine and desktop workspace:
+
+| Topic | What You Will Explore | Theory Reference |
 | --- | --- | --- |
-| Logical clocks | Happens-before ordering, Lamport / Vector Clock updates | Distributed-System notes/01 |
-| Global snapshots | Marker propagation and consistent cuts | Distributed-System notes/01 |
-| Fault tolerance | Failure detector assumptions and recovery | Distributed-System notes/02 |
-| Paxos / Raft | Leader/term and message-driven consensus behavior | Distributed-System notes/02 |
-| ZooKeeper, Gossip, Replication, HDFS, Kafka | Planned after references exist and are verified | Distributed-System notes index |
+| **Logical Clocks** | Ordering events without synchronized physical clocks (Lamport & Vector Clocks) | `Distributed-System` notes/01 |
+| **Global Snapshots** | Taking a consistent picture of a running system using Chandy-Lamport markers | `Distributed-System` notes/01 |
+| **Fault Tolerance** | How failure detectors work and why timeouts can be fooled | `Distributed-System` notes/02 |
+| **Paxos / Raft** | Leader election, terms, voting, and reaching agreement despite crashes | `Distributed-System` notes/02 |
+| **Replication, Locks, Gossip, Queues** | Planned only after verified course notes exist | `Distributed-System` notes index |
 
-Do not represent planned scenarios as working features.
+Never describe planned scenarios as working features.
 
-## 10. Delivery and collaboration
+---
 
-For the first Antigravity run:
-1. Read README.md, AGENTS.md and this specification.
-2. Propose a lean frontend stack and a Phase 0 implementation plan.
-3. Implement Phase 0 end-to-end; include a launchable local UI, meaningful node/module drill-down and clean component boundaries.
-4. Establish typed simulation interfaces without pretending Phase 1 has been implemented.
-5. Run typecheck, build, tests and (if browser access exists) exercise the interactions.
-6. Update project docs with accurate status, commands and limitations.
+## 10. Immediate Next Steps
 
-Keep all teaching links pointed at the separate Distributed-System repository.
+1. Keep `README.md`, `AGENTS.md`, `GEMINI.md`, and this spec aligned with the **C# + Avalonia UI** desktop architecture.
+2. Share a short Phase 0 file plan and create the `.NET` solution (`WUWAScope.Simulation`, `WUWAScope.App`, and test projects).
+3. Build Phase 0 end to end: launchable Avalonia desktop window, 5-node cluster diagram, working Cluster → Node → Module drill-down, clearly labeled stub data, and clean Phase 1 engine interfaces.
+4. Run `dotnet build` and `dotnet test`, launch and verify the desktop app locally, and update `README.md` with exact working commands.

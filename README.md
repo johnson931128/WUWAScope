@@ -1,95 +1,99 @@
 # WUWAScope
 
-**An interactive laboratory for exploring how distributed systems work.**
+**An interactive desktop lab for seeing how distributed systems really work.**
 
-WUWAScope（分散式系統互動視覺化實驗室）是一個以 **Simulation-first** 為核心的 Web App，讓抽象的分散式系統概念變成可觀察、可操作、可重播的事件。除了從叢集全景追蹤請求與訊息，也可以進入任一節點，檢視內部模組、佇列、狀態轉移與故障恢復過程。
+WUWAScope is a local desktop app built with **C# and Avalonia UI**. Instead of reading static diagrams and guessing what happens inside a multi-machine system, you can run a live simulation, pause it, step through events one by one, break things on purpose, and look inside any machine to see how it reacts.
 
-> **Project status:** Planning / specification. 尚未完成可執行的 App；以下功能為設計目標，不代表已實作。
+> **Project status:** Planning and design. There is no runnable app yet. Everything below describes the planned design, not finished features.
 
-## Product vision
+## What Makes WUWAScope Different
 
-WUWAScope 不只是顯示節點在線狀態的 Dashboard，而是結合 **System Diagram + Discrete-event Simulator + Node Inspector + Guided Learning** 的互動式實驗環境。
+WUWAScope is not a fake server monitoring dashboard and not a static slideshow. It combines an **interactive system diagram**, a **step-by-step simulator**, and a **deep node inspector** in one local desktop window.
 
-三層視角：
+You can explore the system at **three zoom levels**:
 
-1. **Cluster View** — 顯示 Client、Coordinator／Master、Worker、Storage 等角色，觀察網路拓樸、節點狀態與訊息路徑。
-2. **Node View** — 點進節點，查看 Request Handler、Scheduler、Task Queue、Message Transport、State Machine、Storage Adapter 等邏輯模組及其資料流。
-3. **Module View** — 查看模組當前狀態、輸入／輸出訊息、等待佇列、事件紀錄與狀態變化。依場景展示相關模組，不假設所有節點具有相同內部結構。
+1. **Cluster View (The Big Picture)** — See all machines working together (Client, Coordinator, Workers), their current health, and messages traveling between them.
+2. **Node View (Inside One Machine)** — Click any machine to open it up and see its internal parts (such as Request Handler, Scheduler, Task Queue, Inbox, Executor, and Heartbeat Sender) and how data flows between them.
+3. **Module View (Inside One Part)** — Click any internal part to inspect its current state, waiting queue, recent inputs/outputs, and event history. Different machine roles have different internal parts.
 
-### Key interactions
+### Core Features
 
-- **Play / Pause / Step / Replay / Speed**：逐事件播放、暫停、單步推進、重新開始和調整速度。
-- **Animated message tracing**：追蹤訊息發送、在途、送達、逾時及重試，顯示事件因果順序。
-- **Drill-down inspection**：從 Cluster → Node → Module 持續深入，保留可返回的導覽路徑。
-- **Fault injection**：操作 Crash / Recover、Message Delay / Drop、Timeout 等故障情境。
-- **Timeline & event log**：用事件時間軸、可篩選日誌和選中事件的詳細資訊理解系統行為。
-- **Explain the why**：對應情境呈現原理、角色、關鍵不變量及理論筆記連結。
-- **Truthful metrics**：清楚標註 simulated metrics；不得把預設或估計數據稱為真實量測。
+- **Play / Pause / Step / Reset / Speed:** Run the simulation continuously, freeze time, advance exactly one event at a time, restart from the same starting point, or change playback speed.
+- **Visible message travel:** Watch messages leave one machine, travel across the network, arrive, get delayed, get dropped, or get retried — always in the exact order events happened.
+- **Zoom in and out seamlessly:** Move from Cluster → Node → Module and back without losing your place or restarting the simulation.
+- **Built-in failure testing:** Crash a worker, recover it, or delay/drop a message to see how the system detects problems and recovers step by step.
+- **Event timeline:** Follow an ordered log of everything that happened, filter by type or machine, and click any entry to see what caused it.
+- **Clear explanations:** Plain-language notes explaining *why* something happened, with links to the full course theory notes.
+- **Honest simulated numbers:** All metrics are clearly labeled as **Simulated**. Nothing pretends to be real CPU, RAM, or live network measurements.
 
-## Interface concept
+## Desktop Layout
 
-採用 **Desktop-first、互動式架構圖** 的操作體驗，靈感來自 [Designed to Scale — Request Lifecycle](https://designed-to-scale.vercel.app/#/request-lifecycle/3) 的逐步導覽和動畫教學，但 WUWAScope 會有自己的 UI 與互動模型，而非照搬其視覺資產。
+WUWAScope is designed as a clean, desktop-first engineering workspace. Its step-by-step storytelling is inspired by [Designed to Scale — Request Lifecycle](https://designed-to-scale.vercel.app/#/request-lifecycle/3), while its UI, visual style, and interactive node-internals view are designed from scratch for a desktop app.
 
-| 區域 | 主要用途 |
+| Area | What It Shows |
 | --- | --- |
-| Top toolbar | 情境名稱、播放／暫停／單步／重設、速度、故障操作 |
-| Left sidebar | 場景清單、節點清單、概念導覽 |
-| Center canvas | 可縮放的叢集圖、互動節點、帶方向的訊息動畫 |
-| Right inspector | 選中節點／模組的內部結構、Queue、State、Metadata |
-| Bottom timeline | 事件時間軸、訊息追蹤、狀態變化、事件篩選 |
+| **Top toolbar** | Current scenario name, Simulated mode badge, Play / Pause / Step / Reset, speed control, and failure triggers |
+| **Left sidebar** | Scenario list, machine outline, and short concept guides |
+| **Center canvas** | Interactive zoomable diagram of the cluster (or the selected node's internal modules) with animated message paths |
+| **Right inspector** | Live details for the selected cluster, node, or module (status, queues, counters, and plain-language notes) |
+| **Bottom timeline** | Ordered event log with filters and click-to-inspect details |
 
-設計原則：事件與狀態是視覺化的唯一資料來源；不能只播放看起來合理、卻沒有對應模擬狀態的裝飾動畫。
+**Golden rule:** The simulation state and event log drive everything you see on screen. Animations never run on fake, disconnected timers.
 
-## First playable scenario: Distributed Task Scheduling
+## First Playable Scenario: Distributed Task Scheduling
 
-初版以「**1 Coordinator + 3 Workers**」建立可驗證的端到端模擬：
+The first working version focuses on one classic, easy-to-follow setup: **1 Client + 1 Coordinator + 3 Workers**.
 
-1. Client 發出 Job Request。
-2. Coordinator 接收請求，建立 Job 與 Task，放進 Queue。
-3. Scheduler 選擇 Worker，透過模擬網路傳送 Dispatch 訊息。
-4. Worker 接收並執行 Task，送回 Result／Completion。
-5. Coordinator 更新 Job 狀態，回覆 Client。
-6. 故障實驗：Worker Crash、Heartbeat 逾時、Task Reassignment、重複完成訊息處理。
+**Normal flow (Happy Path):**
+1. The Client sends a new Job.
+2. The Coordinator receives the Job, creates a Task, and puts it in its waiting Queue.
+3. The Scheduler picks a healthy Worker and sends the Task over the simulated network.
+4. The Worker receives the Task, runs it, and sends the Result back.
+5. The Coordinator records the Result and replies to the Client.
 
-可以選中 Worker，直接檢視 Inbox、Task Executor、Local State、Heartbeat 與 Outbox 等內部模組。MVP 重點是 **讓訊息、排程、故障與恢復在畫面中有可追溯的因果關係**。
+**Failure flow (When Things Go Wrong):**
+1. You crash a Worker while it is busy (or delay its messages).
+2. The Worker stops sending heartbeats (periodic "I'm alive" signals).
+3. After a timeout, the Coordinator marks that Worker as failed and puts the unfinished Task back into the queue.
+4. The Scheduler assigns a fresh attempt of that Task to another healthy Worker.
+5. If a late reply from the old failed attempt shows up later, the Coordinator recognizes it as outdated and safely ignores it.
 
-後續情境可擴展為 Logical Clock、Global Snapshot、Paxos／Raft Leader Election、Replication、Distributed Lock、Gossip、MapReduce 等；每個情境均須先定義協定與驗收條件，再加入 UI。
+You can click into any machine during the run to watch its queues, state changes, and messages update in real time.
 
-## Theory references
+## Theory Reference
 
-本專案的主要學理、術語與推導依據，統一參照獨立維護的 [Distributed-System 學習筆記](https://github.com/johnson931128/Distributed-System)。**WUWAScope 負責互動模擬與視覺化，不重複建立另一套課程講義。**
+All formal distributed-systems theory, proofs, and course notes live in a separate repository: [Distributed-System Notes](https://github.com/johnson931128/Distributed-System). **WUWAScope focuses on interactive simulation and visual intuition instead of duplicating textbook chapters.**
 
-目前已公開的對應內容：
+Published reference notes currently available:
 
+- [Notes Index & Progress](https://github.com/johnson931128/Distributed-System/blob/main/notes/README.md)
 - [Course Introduction](https://github.com/johnson931128/Distributed-System/blob/main/notes/00-course-introduction.md)
 - [Logical Clocks, Global States & Checkpointing](https://github.com/johnson931128/Distributed-System/blob/main/notes/01-logical-clocks-checkpointing.md)
 - [Fault Tolerance, Paxos & Raft](https://github.com/johnson931128/Distributed-System/blob/main/notes/02-fault-tolerance-paxos-raft.md)
-- [Notes index / progress](https://github.com/johnson931128/Distributed-System/blob/main/notes/README.md)
 
-後續章節可能仍在規劃中；沒有實際存在的筆記，不建立假連結或宣稱已完成。
+Future topics that do not yet have published notes may be listed as planned, never presented as already verified.
 
-## Proposed architecture
+## Planned Architecture
 
-- **Frontend**：React + TypeScript；互動節點圖可評估 React Flow（@xyflow/react）。
-- **Simulation core**：與 UI 解耦的 TypeScript 離散事件引擎，以可重現的事件佇列與狀態轉移驅動畫面。
-- **State and trace**：結構化事件日誌、可序列化的模擬狀態、可重現的 seed。
-- **Testing**：模擬引擎單元測試、故障情境測試及基本 UI 互動測試。
-- **Future real-cluster mode**：未來可透過 Backend / WebSocket / Container 對接真實服務；與 Simulation Mode 明確區分。
+WUWAScope is a native cross-platform desktop application written in **C# (.NET)** using **Avalonia UI**:
 
-技術選擇尚屬提案，實作前可依需求調整；不要只為展示而架設不必要的真實微服務。
+- **Simulation Core (`WUWAScope.Simulation`):** A pure C# library with zero UI dependencies. It runs the simulated clock, event queue, machine state transitions, and repeatable random seed.
+- **Desktop UI (`WUWAScope.App`):** Built with **Avalonia UI** (using MVVM — separating UI layout from screen state logic) and hardware-accelerated vector graphics for smooth zooming, panning, and message animations.
+- **Automated Tests (`WUWAScope.Simulation.Tests` & `WUWAScope.App.Tests`):** Unit tests that verify exact event ordering, repeatable replays, crash recovery, and UI interactions.
+- **Future Live Mode (Optional):** If we ever connect real local processes later, that adapter will stay completely separate from the simulation core.
 
 ## Roadmap
 
-- **Phase 0 — Interactive shell**：完整介面骨架、節點可點選、Cluster / Node / Module 導覽、假資料明確標記。
-- **Phase 1 — Working simulator (MVP)**：任務分派、事件佇列、逐步播放、訊息動畫、時間軸、Worker 故障與重派。
-- **Phase 2 — Distributed-systems lessons**：Logical Clocks、Snapshots、Leader Election 與 Consensus 情境。
-- **Phase 3 — Advanced experiments**：Network Partition、Replication、可重播測試、情境比較與效能指標。
-- **Phase 4 — Live integrations (optional)**：將真實節點事件映射到相同可視化介面。
+- **Phase 0 — Interactive Shell:** Runnable Avalonia desktop app with the five-panel workspace, clickable Cluster → Node → Module navigation, clear placeholder/stub labels, and core simulation interfaces ready for Phase 1.
+- **Phase 1 — First Working Simulator (MVP):** Real pure-C# event engine driving the Task Scheduling scenario, smooth message animations, Play/Pause/Step/Reset, Event Timeline, Worker Crash & Reassignment, Stale Result handling, and full unit tests.
+- **Phase 2 — Core Distributed Systems Lessons:** New scenarios built on the same engine, linked to the theory notes — Logical Clocks, Global Snapshots, and Leader Election / Consensus (Raft/Paxos).
+- **Phase 3 — Deeper Lab Tools:** Network splits (partitions), custom delay/drop settings, timeline scrubbing, trace export/import, and side-by-side policy comparisons.
+- **Phase 4 — Live Mode (Optional):** Feed events from real local processes into the same visual workspace, clearly separated from Simulated Mode.
 
-## Development handoff
+## Project Documents
 
-- [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md)：MVP 互動規格、狀態模型與驗收條件。
-- [AGENTS.md](AGENTS.md)：AI Agent 開發規範及理論引用規則。
-- [GEMINI.md](GEMINI.md)：Gemini／Antigravity 入口，指向共用規範。
+- [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — Detailed product design, scenario walkthroughs, engine contract, and acceptance checklists.
+- [AGENTS.md](AGENTS.md) — Rules and engineering standards for AI coding agents working on this repo.
+- [GEMINI.md](GEMINI.md) — Entry file for Gemini / Antigravity pointing to `AGENTS.md`.
 
-現階段尚未建立程式碼及安裝腳本；應先完成 Phase 0 的可運作介面，再實作 Phase 1 的可信模擬引擎。
+> Build and run commands will be documented here once Phase 0 creates the `.NET` solution and verifies them locally.
