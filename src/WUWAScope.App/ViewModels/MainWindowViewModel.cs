@@ -47,6 +47,8 @@ public sealed record EventListItem(
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private const double BaseSimMsPerRealSecond = 420.0;
+
     private readonly ISimulationEngine _engine;
     private readonly HashSet<string> _expandedNodeIds = ["coordinator"];
 
@@ -54,6 +56,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private SimulationState _currentState;
+
+    [ObservableProperty]
+    private bool _isPlaying;
+
+    [ObservableProperty]
+    private double _visualTimeMs;
 
     [ObservableProperty]
     private NavigationLevel _currentLevel = NavigationLevel.Cluster;
@@ -123,6 +131,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _engine = engine;
         _currentState = _engine.GetState();
+        _visualTimeMs = _currentState.SimulatedTimeMs;
         _engine.StateChanged += OnEngineStateChanged;
 
         Scenarios = ScenarioCatalog.All;
@@ -132,10 +141,9 @@ public partial class MainWindowViewModel : ViewModelBase
         EventNodeOptions = ["All", "client", "coordinator", "worker-1", "worker-2", "worker-3"];
 
         StatusBannerText = IsPrototypeStub
-            ? "Phase 0 Prototype Shell — Sample snapshot data is shown. Live Play / Step / Fault simulation arrives in Phase 1."
-            : "Simulation ready.";
+            ? "Phase 0 Prototype Shell — Sample snapshot data is shown."
+            : "Ready! Press Play (Space) or Step (N) to watch Job J1 move through the cluster.";
 
-        // Start focused on Coordinator so the inspector immediately demonstrates rich content.
         SelectedNodeId = "coordinator";
         RefreshAllDerivedCollections();
     }
@@ -166,7 +174,43 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanRunLivePlayback => !_engine.IsPrototypeStub;
 
-    public string SimulatedTimeDisplay => $"t = {CurrentState.SimulatedTimeMs} ms (Simulated)";
+    public bool CanPlay => CanRunLivePlayback && !IsPlaying;
+
+    public bool CanPause => CanRunLivePlayback && IsPlaying;
+
+    public double SpeedMultiplier => SelectedSpeedLabel switch
+    {
+        "0.5x" => 0.5,
+        "2.0x" => 2.0,
+        "4.0x" => 4.0,
+        _ => 1.0
+    };
+
+    public string SimulatedTimeDisplay => $"t = {Math.Round(VisualTimeMs):0} ms (Simulated)";
+
+    public string TargetWorkerActionLabel
+    {
+        get
+        {
+            var worker = ResolveTargetWorker();
+            if (worker is null)
+            {
+                return "⚡ Crash Worker";
+            }
+
+            return worker.Health == NodeHealthStatus.Failed
+                ? $"↻ Recover {worker.Name}"
+                : $"⚡ Crash {worker.Name}";
+        }
+    }
+
+    public string DelayActionLabel => CurrentState.Metrics.ArmedDelayCount > 0
+        ? $"⏱ Delay Msg ({CurrentState.Metrics.ArmedDelayCount} armed)"
+        : "⏱ Delay Next Msg";
+
+    public string DropActionLabel => CurrentState.Metrics.ArmedDropCount > 0
+        ? $"✕ Drop Msg ({CurrentState.Metrics.ArmedDropCount} armed)"
+        : "✕ Drop Next Msg";
 
     public string BreadcrumbText => CurrentLevel switch
     {
@@ -211,6 +255,17 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshAllDerivedCollections();
     }
 
+    partial void OnIsPlayingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanPlay));
+        OnPropertyChanged(nameof(CanPause));
+    }
+
+    partial void OnVisualTimeMsChanged(double value)
+    {
+        OnPropertyChanged(nameof(SimulatedTimeDisplay));
+    }
+
     partial void OnSelectedInspectorTabIndexChanged(int value)
     {
         OnPropertyChanged(nameof(IsStatusTabSelected));
@@ -228,6 +283,195 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnEventNodeFilterChanged(string value) => RefreshFilteredEvents();
 
     partial void OnEventSearchTextChanged(string value) => RefreshFilteredEvents();
+
+    /// <summary>
+    /// Advances the smooth visual playback clock during Play mode and executes engine events
+    /// strictly at their exact simulated timestamps. Speed never alters event ordering or outcomes.
+    /// </summary>
+    public void AdvancePlaybackFrame(double deltaRealSeconds)
+    {
+        if (!IsPlaying || !CanRunLivePlayback || deltaRealSeconds <= 0)
+        {
+            return;
+        }
+
+        var nextEventTime = _engine.PeekNextEventTimeMs();
+        if (nextEventTime is null)
+        {
+            IsPlaying = false;
+            StatusBannerText = "Simulation idle — click '+ Submit Job' to send more work.";
+            return;
+        }
+
+        var deltaSimMs = Math.Min(deltaRealSeconds, 0.1) * BaseSimMsPerRealSecond * SpeedMultiplier;
+        VisualTimeMs += deltaSimMs;
+
+        var executedThisFrame = 0;
+        while (executedThisFrame < 12 &&
+               _engine.PeekNextEventTimeMs() is long scheduledMs &&
+               VisualTimeMs >= scheduledMs)
+        {
+            var result = _engine.Step();
+            if (!result.Executed)
+            {
+                IsPlaying = false;
+                break;
+            }
+
+            if (result.Event is not null)
+            {
+                StatusBannerText = $"[{result.Event.TimestampMs} ms] {result.Event.Summary}";
+            }
+
+            executedThisFrame++;
+        }
+    }
+
+    [RelayCommand]
+    public void PlaySimulation()
+    {
+        if (!CanRunLivePlayback)
+        {
+            return;
+        }
+
+        if (_engine.PeekNextEventTimeMs() is null)
+        {
+            _engine.DispatchAction(new SubmitJobAction("New Job", TaskCount: 1));
+        }
+
+        IsPlaying = true;
+    }
+
+    [RelayCommand]
+    public void PauseSimulation()
+    {
+        IsPlaying = false;
+    }
+
+    [RelayCommand]
+    public void TogglePlayPause()
+    {
+        if (IsPlaying)
+        {
+            PauseSimulation();
+        }
+        else
+        {
+            PlaySimulation();
+        }
+    }
+
+    [RelayCommand]
+    public void StepSimulation()
+    {
+        IsPlaying = false;
+        var result = _engine.Step();
+        CurrentState = result.State;
+        VisualTimeMs = CurrentState.SimulatedTimeMs;
+
+        if (result.Executed && result.Event is not null)
+        {
+            StatusBannerText = $"Step #{result.Event.Sequence} ({result.Event.TimestampMs} ms): {result.Event.Summary}";
+        }
+        else if (!string.IsNullOrWhiteSpace(result.Note))
+        {
+            StatusBannerText = result.Note;
+        }
+
+        RefreshAllDerivedCollections();
+    }
+
+    [RelayCommand]
+    public void ResetSimulation()
+    {
+        IsPlaying = false;
+        CurrentState = _engine.Reset();
+        VisualTimeMs = CurrentState.SimulatedTimeMs;
+        SelectedEventId = null;
+        SelectedEvent = null;
+        SelectedEventPayload.Clear();
+        StatusBannerText = IsPrototypeStub
+            ? "Prototype snapshot reset."
+            : "Simulation reset to t = 0 ms (same seed and initial state).";
+
+        LayoutResetRequested?.Invoke();
+        OnPropertyChanged(nameof(HasSelectedEvent));
+        OnPropertyChanged(nameof(SelectedEventRoute));
+        RefreshAllDerivedCollections();
+    }
+
+    [RelayCommand]
+    public void SubmitJob()
+    {
+        if (!CanRunLivePlayback)
+        {
+            return;
+        }
+
+        _engine.DispatchAction(new SubmitJobAction("User Job", TaskCount: 1));
+        if (!IsPlaying)
+        {
+            StepSimulation();
+        }
+        else
+        {
+            StatusBannerText = "Queued a new job from Client.";
+        }
+    }
+
+    [RelayCommand]
+    public void ToggleCrashTargetWorker()
+    {
+        if (!CanRunLivePlayback)
+        {
+            return;
+        }
+
+        var target = ResolveTargetWorker();
+        if (target is null)
+        {
+            return;
+        }
+
+        if (target.Health == NodeHealthStatus.Failed)
+        {
+            _engine.DispatchAction(new RecoverWorkerAction(target.Id));
+        }
+        else
+        {
+            _engine.DispatchAction(new CrashWorkerAction(target.Id));
+        }
+
+        if (!IsPlaying)
+        {
+            StepSimulation();
+        }
+    }
+
+    [RelayCommand]
+    public void DelayNextMessage()
+    {
+        if (!CanRunLivePlayback)
+        {
+            return;
+        }
+
+        _engine.DispatchAction(new DelayNextMessageAction(ExtraDelayMs: 2600));
+        StatusBannerText = "Armed +2600 ms delay on the next job/task/result message (great for triggering retries & stale replies).";
+    }
+
+    [RelayCommand]
+    public void DropNextMessage()
+    {
+        if (!CanRunLivePlayback)
+        {
+            return;
+        }
+
+        _engine.DispatchAction(new DropNextMessageAction());
+        StatusBannerText = "Armed packet drop on the next job/task/result message.";
+    }
 
     [RelayCommand]
     public void ToggleLeftSidebar() => IsLeftSidebarOpen = !IsLeftSidebarOpen;
@@ -410,7 +654,6 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedEventPayload.Add(new KeyValueItem(pair.Key, pair.Value));
         }
 
-        // Focus related node/module cleanly without jarring unexpected jumps out of context
         if (CurrentLevel == NavigationLevel.Cluster)
         {
             SelectedNodeId = item.Record.SourceNodeId;
@@ -425,36 +668,6 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasSelectedEvent));
         OnPropertyChanged(nameof(SelectedEventRoute));
         NotifyNavigationChanged();
-        RefreshAllDerivedCollections();
-    }
-
-    [RelayCommand]
-    public void StepSimulation()
-    {
-        var result = _engine.Step();
-        CurrentState = result.State;
-        if (!string.IsNullOrWhiteSpace(result.Note))
-        {
-            StatusBannerText = result.Note;
-        }
-
-        RefreshAllDerivedCollections();
-    }
-
-    [RelayCommand]
-    public void ResetSimulation()
-    {
-        CurrentState = _engine.Reset();
-        SelectedEventId = null;
-        SelectedEvent = null;
-        SelectedEventPayload.Clear();
-        StatusBannerText = IsPrototypeStub
-            ? "Prototype snapshot reset. Live simulation reset & deterministic replay arrive in Phase 1."
-            : "Simulation reset to starting state.";
-
-        LayoutResetRequested?.Invoke();
-        OnPropertyChanged(nameof(HasSelectedEvent));
-        OnPropertyChanged(nameof(SelectedEventRoute));
         RefreshAllDerivedCollections();
     }
 
@@ -474,6 +687,19 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private NodeState? ResolveTargetWorker()
+    {
+        if (FindNode(SelectedNodeId) is { Role: NodeRole.Worker } selectedWorker)
+        {
+            return selectedWorker;
+        }
+
+        // Prefer a currently busy worker so "Crash Worker" immediately demonstrates active failover
+        return CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker && n.ActiveTaskCount > 0)
+               ?? CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker && n.Health != NodeHealthStatus.Failed)
+               ?? CurrentState.Nodes.FirstOrDefault(n => n.Role == NodeRole.Worker);
+    }
+
     private void NotifyNavigationChanged()
     {
         OnPropertyChanged(nameof(BreadcrumbText));
@@ -482,6 +708,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanOpenSelectedNodeInternals));
         OnPropertyChanged(nameof(ActiveNode));
         OnPropertyChanged(nameof(SimulatedTimeDisplay));
+        OnPropertyChanged(nameof(TargetWorkerActionLabel));
     }
 
     private void RefreshAllDerivedCollections()
@@ -492,6 +719,10 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SimulatedTimeDisplay));
         OnPropertyChanged(nameof(HasChildModules));
         OnPropertyChanged(nameof(CanOpenSelectedNodeInternals));
+        OnPropertyChanged(nameof(ActiveNode));
+        OnPropertyChanged(nameof(TargetWorkerActionLabel));
+        OnPropertyChanged(nameof(DelayActionLabel));
+        OnPropertyChanged(nameof(DropActionLabel));
     }
 
     private void RefreshClusterOutline()
@@ -572,7 +803,7 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorSubtitle = node.StatusSummary;
             InspectorStatusLabel = FormatNodeHealth(node.Health);
             InspectorPlainDescription = node.PlainDescription;
-            InspectorQueueTitle = "Inbox & Outbox Activity";
+            InspectorQueueTitle = "Recent Inbox & Outbox Activity";
 
             foreach (var item in node.InboxItems)
             {
@@ -586,7 +817,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
             if (InspectorQueueItems.Count == 0)
             {
-                InspectorQueueItems.Add("No buffered messages");
+                InspectorQueueItems.Add("No recent messages");
             }
 
             InspectorCounters.Add(new KeyValueItem("Active Tasks (Simulated)", $"{node.ActiveTaskCount} / {node.Capacity}"));
@@ -610,21 +841,33 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorKindLabel = "CLUSTER OVERVIEW";
             InspectorTitle = CurrentState.ScenarioTitle;
             InspectorSubtitle = $"{CurrentState.Nodes.Count} machines · Seed #{CurrentState.Seed}";
-            InspectorStatusLabel = "● Healthy";
+            InspectorStatusLabel = metrics.RunningTasks > 0 ? "▶ Processing" : "● Healthy";
             InspectorPlainDescription = ActiveScenario.ShortSummary;
-            InspectorQueueTitle = "Active Jobs & Tasks";
+            InspectorQueueTitle = "Jobs & Tasks";
 
-            foreach (var task in CurrentState.Tasks)
+            if (CurrentState.Tasks.Count == 0)
             {
-                var workerText = task.AssignedWorkerId is null ? "Unassigned" : FormatNodeName(task.AssignedWorkerId);
-                InspectorQueueItems.Add($"{task.Id} ({task.Status}) → {workerText}");
+                InspectorQueueItems.Add("No tasks yet — press Play or Step");
+            }
+            else
+            {
+                foreach (var task in CurrentState.Tasks)
+                {
+                    var workerText = task.AssignedWorkerId is null ? "Queued" : FormatNodeName(task.AssignedWorkerId);
+                    var attemptText = task.AcceptedAttemptId ?? task.CurrentAttemptId ?? "-";
+                    InspectorQueueItems.Add($"{task.Id} ({task.Status}, {attemptText}) → {workerText}");
+                }
             }
 
+            InspectorCounters.Add(new KeyValueItem("Pending / Running / Done", $"{metrics.PendingTasks} / {metrics.RunningTasks} / {metrics.CompletedTasks}"));
             InspectorCounters.Add(new KeyValueItem("Queue Depth (Simulated)", metrics.QueueDepth.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Running Tasks (Simulated)", metrics.RunningTasks.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Completed Tasks (Simulated)", metrics.CompletedTasks.ToString()));
             InspectorCounters.Add(new KeyValueItem("Retries (Simulated)", metrics.RetryCount.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Messages Sent (Simulated)", metrics.MessagesSent.ToString()));
+            InspectorCounters.Add(new KeyValueItem("Stale Replies Ignored", metrics.StaleResultsIgnored.ToString()));
+            InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
+            if (metrics.LastJobDurationMs.HasValue)
+            {
+                InspectorCounters.Add(new KeyValueItem("Last Job Duration (Simulated)", $"{metrics.LastJobDurationMs.Value} ms"));
+            }
         }
 
         OnPropertyChanged(nameof(HasChildModules));
@@ -635,7 +878,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         FilteredEvents.Clear();
 
-        foreach (var evt in CurrentState.EventLog)
+        // Newest events appear at the top so live simulation updates are immediately readable
+        foreach (var evt in CurrentState.EventLog.OrderByDescending(e => e.Sequence))
         {
             if (EventCategoryFilter != "All" &&
                 !string.Equals(evt.Category.ToString(), EventCategoryFilter, StringComparison.OrdinalIgnoreCase))

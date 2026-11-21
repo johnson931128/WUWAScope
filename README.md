@@ -4,7 +4,7 @@
 
 WUWAScope is a local desktop app built with **C# and Avalonia UI**. Instead of reading static diagrams and guessing what happens inside a multi-machine system, you can run a live simulation, pause it, step through events one by one, break things on purpose, and look inside any machine to see how it reacts.
 
-> **Project status:** **Phase 0 (Interactive Desktop Shell) is runnable.** The 2.5D isometric cluster canvas, Cluster → Node → Module drill-down, collapsible panels, 2-tab inspector, and filterable event timeline work locally using clearly labeled **Prototype Stub** sample data. The live discrete-event engine (`Play`, `Step`, fault injection) is planned next in **Phase 1**.
+> **Project status:** **Phase 1 (First Playable MVP) is complete and runnable locally.** The pure C# deterministic discrete-event engine now drives the **Distributed Task Scheduling** scenario end to end — including Play / Pause / Step / Reset / Speed, smooth state-driven message travel, Cluster → Node → Module drill-down, Worker Crash & Recovery, Heartbeat Timeouts, Task Reassignment, Message Delay / Drop, and Stale Result Rejection. **Phase 2 (Logical Clocks, Global Snapshots, Leader Election)** is next.
 
 ## What Makes WUWAScope Different
 
@@ -90,7 +90,7 @@ WUWAScope is a native cross-platform desktop application written in **C# (.NET)*
 - **Phase 3 — Deeper Lab Tools:** Network splits (partitions), custom delay/drop settings, timeline scrubbing, trace export/import, and side-by-side policy comparisons.
 - **Phase 4 — Live Mode (Optional):** Feed events from real local processes into the same visual workspace, clearly separated from Simulated Mode.
 
-## Running Locally (Phase 0)
+## Running Locally (Phase 1 MVP)
 
 Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on `.NET 10.0.102`).
 
@@ -98,18 +98,21 @@ Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on 
 # Build the entire solution
 dotnet build WUWAScope.slnx
 
-# Run automated unit tests (simulation contracts + ViewModel navigation)
+# Run automated unit tests (deterministic engine invariants + ViewModel playback & navigation)
 dotnet test WUWAScope.slnx
 
 # Launch the local Avalonia desktop app
 dotnet run --project src/WUWAScope.App
+
+# Optional: launch directly into playback or directly inside a machine
+dotnet run --project src/WUWAScope.App -- --autoplay
+dotnet run --project src/WUWAScope.App -- --open-node coordinator
 ```
 
 **Controls inside the app:**
-- **Single-click a machine** on the 2.5D canvas to inspect its status and queues.
-- **Double-click a machine** (or click `Open Inside Machine →`) to zoom inside its 2.5D internal module layout.
-- **Scroll** to zoom, **drag empty space** to pan, or click **Fit** to re-center.
-- Press **`Esc`** to step back up one level (`Module → Node → Cluster`) without losing state.
+- **Play / Pause (`Space`)**, **Step (`N`)** for one event at a time, **Reset (`R`)**, and **Speed** (`0.5x` – `4.0x`).
+- **Fault experiments:** Click **`+ Submit Job`**, **`⚡ Crash Worker` / `↻ Recover Worker`**, **`⏱ Delay Next Msg`** (triggers timeout retry & stale-result rejection), or **`✕ Drop Next Msg`**.
+- **2.5D Canvas:** **Single-click** a machine to inspect it, **double-click** (or click `Open Inside Machine →`) to open its 2.5D internal module layout, **drag** machines/modules to rearrange them, **scroll** to zoom, **drag empty space** to pan, and press **`Esc`** to step back up one level without losing simulation state.
 - Use **Hide Menu / Hide Details / Hide Timeline** in the top-right to maximize the 2.5D canvas.
 
 ## Project Documents

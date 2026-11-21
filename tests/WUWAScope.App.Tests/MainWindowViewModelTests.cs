@@ -1,4 +1,6 @@
 using WUWAScope.App.ViewModels;
+using WUWAScope.Simulation.Engine;
+using WUWAScope.Simulation.Models;
 using WUWAScope.Simulation.Stubs;
 
 namespace WUWAScope.App.Tests;
@@ -117,5 +119,90 @@ public sealed class MainWindowViewModelTests
         Assert.Equal("▸", coordAfter.ChevronIcon);
         Assert.True(workerAfter.IsExpanded);
         Assert.Equal("▾", workerAfter.ChevronIcon);
+    }
+
+    [Fact]
+    public void LiveEngine_PauseBlocksProgressionAndStepAdvancesExactlyOneEvent()
+    {
+        var vm = new MainWindowViewModel(new DiscreteEventSimulationEngine(seed: 42));
+
+        Assert.False(vm.IsPrototypeStub);
+        Assert.True(vm.CanRunLivePlayback);
+        Assert.True(vm.CanPlay);
+        Assert.False(vm.CanPause);
+        Assert.Empty(vm.CurrentState.EventLog);
+
+        // Pausing (not playing) must block time advancement completely
+        vm.AdvancePlaybackFrame(0.5);
+        Assert.Equal(0, vm.VisualTimeMs);
+        Assert.Empty(vm.CurrentState.EventLog);
+
+        // Stepping advances exactly one event
+        vm.StepSimulationCommand.Execute(null);
+        Assert.Single(vm.CurrentState.EventLog);
+        Assert.Equal(SimulationEventType.JobSubmitted, vm.CurrentState.EventLog[0].Type);
+
+        // Playing advances visual time smoothly and completes job end-to-end
+        vm.PlaySimulationCommand.Execute(null);
+        Assert.True(vm.IsPlaying);
+        Assert.True(vm.CanPause);
+
+        for (var i = 0; i < 120; i++)
+        {
+            vm.AdvancePlaybackFrame(0.05);
+            if (vm.CurrentState.EventLog.Any(e => e.Type == SimulationEventType.ClientResponded))
+            {
+                break;
+            }
+        }
+
+        Assert.Contains(vm.CurrentState.EventLog, e => e.Type == SimulationEventType.ClientResponded);
+
+        // Pause freezes time immediately
+        vm.PauseSimulationCommand.Execute(null);
+        var frozenTime = vm.VisualTimeMs;
+        var frozenCount = vm.CurrentState.EventLog.Count;
+        vm.AdvancePlaybackFrame(0.5);
+        Assert.Equal(frozenTime, vm.VisualTimeMs);
+        Assert.Equal(frozenCount, vm.CurrentState.EventLog.Count);
+    }
+
+    [Fact]
+    public void LiveEngine_FaultControlsAndReset_UpdateStateAndButtonLabels()
+    {
+        var vm = new MainWindowViewModel(new DiscreteEventSimulationEngine(seed: 42));
+
+        // Step until Worker 1 starts running Task T1
+        for (var i = 0; i < 20; i++)
+        {
+            vm.StepSimulationCommand.Execute(null);
+            if (vm.CurrentState.EventLog.Last().Type == SimulationEventType.TaskStarted)
+            {
+                break;
+            }
+        }
+
+        Assert.Contains("Crash Worker 1", vm.TargetWorkerActionLabel);
+
+        vm.ToggleCrashTargetWorkerCommand.Execute(null);
+        var w1 = Assert.Single(vm.CurrentState.Nodes, n => n.Id == "worker-1");
+        Assert.Equal(NodeHealthStatus.Failed, w1.Health);
+
+        vm.SelectNodeCommand.Execute("worker-1");
+        Assert.Contains("Recover Worker 1", vm.TargetWorkerActionLabel);
+
+        vm.DelayNextMessageCommand.Execute(null);
+        Assert.Contains("1 armed", vm.DelayActionLabel);
+
+        vm.DropNextMessageCommand.Execute(null);
+        Assert.Contains("1 armed", vm.DropActionLabel);
+
+        // Reset restores clean initial state
+        vm.ResetSimulationCommand.Execute(null);
+        Assert.False(vm.IsPlaying);
+        Assert.Equal(0, vm.VisualTimeMs);
+        Assert.Empty(vm.CurrentState.EventLog);
+        Assert.Equal(0, vm.CurrentState.Metrics.ArmedDelayCount);
+        Assert.Equal(0, vm.CurrentState.Metrics.ArmedDropCount);
     }
 }

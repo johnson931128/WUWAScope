@@ -76,6 +76,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
 
     public SimulationState GetState() => _state;
 
+    public long? PeekNextEventTimeMs() => null;
+
     public StepResult Step()
     {
         return new StepResult(

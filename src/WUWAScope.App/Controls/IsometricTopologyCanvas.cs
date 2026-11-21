@@ -69,9 +69,13 @@ public sealed class IsometricTopologyCanvas : Control
     private string? _hoveredId;
     private DateTime _lastClickTime;
     private string? _lastClickedId;
+    private string? _lastActiveNodeId;
 
     public static readonly StyledProperty<SimulationState?> SimulationStateProperty =
         AvaloniaProperty.Register<IsometricTopologyCanvas, SimulationState?>(nameof(SimulationState));
+
+    public static readonly StyledProperty<double> VisualTimeMsProperty =
+        AvaloniaProperty.Register<IsometricTopologyCanvas, double>(nameof(VisualTimeMs));
 
     public static readonly StyledProperty<NodeState?> ActiveNodeProperty =
         AvaloniaProperty.Register<IsometricTopologyCanvas, NodeState?>(nameof(ActiveNode));
@@ -92,6 +96,7 @@ public sealed class IsometricTopologyCanvas : Control
     {
         AffectsRender<IsometricTopologyCanvas>(
             SimulationStateProperty,
+            VisualTimeMsProperty,
             ActiveNodeProperty,
             SelectedNodeIdProperty,
             SelectedModuleIdProperty,
@@ -108,6 +113,12 @@ public sealed class IsometricTopologyCanvas : Control
     {
         get => GetValue(SimulationStateProperty);
         set => SetValue(SimulationStateProperty, value);
+    }
+
+    public double VisualTimeMs
+    {
+        get => GetValue(VisualTimeMsProperty);
+        set => SetValue(VisualTimeMsProperty, value);
     }
 
     public NodeState? ActiveNode
@@ -150,8 +161,13 @@ public sealed class IsometricTopologyCanvas : Control
 
         if (change.Property == ActiveNodeProperty)
         {
-            _hoveredId = null;
-            FitToView();
+            var nextId = ActiveNode?.Id;
+            if (nextId != _lastActiveNodeId)
+            {
+                _lastActiveNodeId = nextId;
+                _hoveredId = null;
+                FitToView();
+            }
         }
         else if (change.Property == BoundsProperty && !_hasAutoFit && Bounds.Width > 100 && Bounds.Height > 100)
         {
@@ -374,13 +390,14 @@ public sealed class IsometricTopologyCanvas : Control
 
             DrawIsometricLink(
                 ctx,
+                link.SourceNodeId,
                 from,
                 to,
                 link.Label,
                 link.IsHeartbeatChannel,
                 isEventLink,
                 linkMessages,
-                state.SimulatedTimeMs);
+                VisualTimeMs > 0 ? VisualTimeMs : state.SimulatedTimeMs);
         }
 
         foreach (var node in state.Nodes.OrderBy(n => nodeCenters[n.Id].Y))
@@ -673,7 +690,11 @@ public sealed class IsometricTopologyCanvas : Control
 
         DrawIsometricSlab(ctx, c, halfW, halfH, depth, topColor, leftColor, rightColor, cornerRadius: 14);
 
-        if (isCoord)
+        if (node.Health == NodeHealthStatus.Failed)
+        {
+            DrawFailedIcon(ctx, new Point(c.X, c.Y - 10));
+        }
+        else if (isCoord)
         {
             DrawCoordinatorIcon(ctx, new Point(c.X, c.Y - 12));
         }
@@ -771,13 +792,14 @@ public sealed class IsometricTopologyCanvas : Control
 
     private void DrawIsometricLink(
         DrawingContext ctx,
+        string linkSourceNodeId,
         Point from,
         Point to,
         string label,
         bool isHeartbeat,
         bool isHighlighted,
         IReadOnlyList<MessageState> messages,
-        long simulatedTimeMs)
+        double renderTimeMs)
     {
         var dir = to - from;
         var len = Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
@@ -817,19 +839,32 @@ public sealed class IsometricTopologyCanvas : Control
 
         foreach (var msg in messages)
         {
-            var span = Math.Max(1, msg.DeliverAtMs - msg.SentAtMs);
-            var progress = Math.Clamp((simulatedTimeMs - msg.SentAtMs) / (double)span, 0.25, 0.78);
-            var reversed = msg.Kind == MessageKind.Heartbeat;
-            var t = reversed ? 1.0 - progress : progress;
+            var span = Math.Max(1.0, msg.DeliverAtMs - msg.SentAtMs);
+            var progress = Math.Clamp((renderTimeMs - msg.SentAtMs) / span, 0.06, 0.94);
+            var forward = string.Equals(msg.SourceNodeId, linkSourceNodeId, StringComparison.Ordinal);
+            var t = forward ? progress : 1.0 - progress;
 
             var ptMain = EvalQuadratic(start, ctrl, end, t);
-            var ptTrail = EvalQuadratic(start, ctrl, end, Math.Clamp(t - (reversed ? -0.09 : 0.09), 0.12, 0.88));
+            var trailT = forward ? Math.Max(0.03, t - 0.09) : Math.Min(0.97, t + 0.09);
+            var ptTrail = EvalQuadratic(start, ctrl, end, trailT);
 
-            var dotColor = msg.Kind == MessageKind.Heartbeat ? Color.Parse("#4B8BF5") : HighlightGreen;
+            var dotColor = msg.IsDelayed
+                ? WarningAmber
+                : msg.Kind == MessageKind.Heartbeat
+                    ? Color.Parse("#4B8BF5")
+                    : HighlightGreen;
+
+            var dotRadius = msg.Kind == MessageKind.Heartbeat ? 4.6 : 6.2;
+            var trailRadius = msg.Kind == MessageKind.Heartbeat ? 3.6 : 4.8;
             var dotPen = new Pen(InkBrush, 1.8);
 
-            ctx.DrawEllipse(WhiteBrush, new Pen(new SolidColorBrush(dotColor), 2.0), ptTrail, 5.0, 5.0);
-            ctx.DrawEllipse(new SolidColorBrush(dotColor), dotPen, ptMain, 6.0, 6.0);
+            if (msg.IsDelayed)
+            {
+                ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#44D9822B")), null, ptMain, dotRadius + 4.5, dotRadius + 4.5);
+            }
+
+            ctx.DrawEllipse(WhiteBrush, new Pen(new SolidColorBrush(dotColor), 2.0), ptTrail, trailRadius, trailRadius);
+            ctx.DrawEllipse(new SolidColorBrush(dotColor), dotPen, ptMain, dotRadius, dotRadius);
         }
 
         var isVerticalLink = Math.Abs(end.Y - start.Y) > Math.Abs(end.X - start.X) * 1.4;
@@ -1042,6 +1077,14 @@ public sealed class IsometricTopologyCanvas : Control
 
         var mid = parts.Length / 2;
         return $"{string.Join(' ', parts.Take(mid))}\n{string.Join(' ', parts.Skip(mid))}";
+    }
+
+    private static void DrawFailedIcon(DrawingContext ctx, Point center)
+    {
+        var pen = new Pen(new SolidColorBrush(Color.Parse("#A62626")), 2.6, lineCap: PenLineCap.Round);
+        const double r = 8.5;
+        ctx.DrawLine(pen, new Point(center.X - r, center.Y - r), new Point(center.X + r, center.Y + r));
+        ctx.DrawLine(pen, new Point(center.X + r, center.Y - r), new Point(center.X - r, center.Y + r));
     }
 
     private static void DrawCoordinatorIcon(DrawingContext ctx, Point center)

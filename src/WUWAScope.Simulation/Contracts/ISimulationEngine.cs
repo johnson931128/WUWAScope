@@ -5,9 +5,13 @@ namespace WUWAScope.Simulation.Contracts;
 public sealed record ScenarioConfig(
     string ScenarioId = "task-scheduling",
     int WorkerCount = 3,
-    int DefaultNetworkLatencyMs = 80,
+    int DefaultNetworkLatencyMs = 120,
+    int TaskExecutionDurationMs = 650,
     int HeartbeatIntervalMs = 500,
-    int HeartbeatTimeoutMs = 1500);
+    int HeartbeatSuspectMs = 950,
+    int HeartbeatTimeoutMs = 1500,
+    int AttemptTimeoutMs = 2200,
+    bool AutoSubmitInitialJob = true);
 
 public sealed record ScenarioDescriptor(
     string Id,
@@ -45,6 +49,8 @@ public interface ISimulationEngine
     bool IsPrototypeStub { get; }
 
     SimulationState GetState();
+
+    long? PeekNextEventTimeMs();
 
     StepResult Step();
 

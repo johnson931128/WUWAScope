@@ -1,6 +1,6 @@
 # WUWAScope — Product Specification (v0.2)
 
-- **Status:** Phase 0 complete (Interactive Desktop Shell with Prototype Stub data); Phase 1 live event engine is next
+- **Status:** Phase 1 complete (First Playable MVP with pure C# deterministic discrete-event engine); Phase 2 theory-linked lessons are next
 - **Tech stack:** Local desktop app built with **C# (.NET) + Avalonia UI**
 - **Project overview:** [README.md](../README.md)
 - **Engineering & agent rules:** [AGENTS.md](../AGENTS.md)
@@ -230,17 +230,17 @@ WUWAScope.slnx
 
 ### Phase 1 — First Working Simulator (MVP)
 
-- [ ] Pure C# deterministic event queue runs independently of the Avalonia UI loop.
-- [ ] Happy path finishes end to end with smooth message movement and a clear event timeline.
-- [ ] Node and Module views show live queues and state updates as events fire.
-- [ ] Pause freezes simulated time; Step advances exactly one event.
-- [ ] Reset and repeatable replay pass automated unit tests.
-- [ ] Crashing a worker triggers heartbeat timeout detection, marks the attempt lost, and requeues the task.
-- [ ] A healthy worker picks up and finishes the requeued task.
-- [ ] Late replies from old attempts are marked stale and safely ignored.
-- [ ] Queue and task counters always match engine state.
-- [ ] Automated tests cover at least one full happy path, one worker crash/reassignment path, and stale-result rejection.
-- [ ] All displayed metrics are clearly marked **Simulated** and reproducible.
+- [x] Pure C# deterministic event queue runs independently of the Avalonia UI loop.
+- [x] Happy path finishes end to end with smooth message movement and a clear event timeline.
+- [x] Node and Module views show live queues and state updates as events fire.
+- [x] Pause freezes simulated time; Step advances exactly one event.
+- [x] Reset and repeatable replay pass automated unit tests.
+- [x] Crashing a worker triggers heartbeat timeout detection, marks the attempt lost, and requeues the task.
+- [x] A healthy worker picks up and finishes the requeued task.
+- [x] Late replies from old attempts are marked stale and safely ignored.
+- [x] Queue and task counters always match engine state.
+- [x] Automated tests cover at least one full happy path, one worker crash/reassignment path, and stale-result rejection.
+- [x] All displayed metrics are clearly marked **Simulated** and reproducible.
 
 ---
 

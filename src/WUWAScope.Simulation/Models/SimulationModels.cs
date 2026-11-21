@@ -55,7 +55,8 @@ public sealed record MessageState(
     long SentAtMs,
     long DeliverAtMs,
     MessageDeliveryStatus Status,
-    string PillLabel);
+    string PillLabel,
+    bool IsDelayed = false);
 
 public sealed record JobState(
     string Id,
@@ -100,7 +101,11 @@ public sealed record SimulatedMetrics(
     int DispatchedTasks,
     int RetryCount,
     int MessagesSent,
-    int MessagesDropped);
+    int MessagesDropped,
+    int StaleResultsIgnored = 0,
+    long? LastJobDurationMs = null,
+    int ArmedDelayCount = 0,
+    int ArmedDropCount = 0);
 
 public sealed record SimulationState(
     string ScenarioId,

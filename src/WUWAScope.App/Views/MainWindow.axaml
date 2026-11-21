@@ -63,53 +63,64 @@
         <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
             <Button Classes="pill"
+                    Classes.pill-primary="{Binding IsPlaying}"
                     Content="▶ Play"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Continuous playback arrives in Phase 1 when the live event engine is connected." />
+                    Command="{Binding PlaySimulationCommand}"
+                    IsEnabled="{Binding CanPlay}"
+                    ToolTip.Tip="Run simulation continuously with smooth message animations (Shortcut: Space)." />
             <Button Classes="pill"
                     Content="⏸ Pause"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Pauses the simulated clock (available in Phase 1)." />
+                    Command="{Binding PauseSimulationCommand}"
+                    IsEnabled="{Binding CanPause}"
+                    ToolTip.Tip="Freeze simulated time immediately (Shortcut: Space)." />
             <Button Classes="pill"
                     Content="⏭ Step"
                     Command="{Binding StepSimulationCommand}"
                     IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Advances exactly one queued event (available in Phase 1)." />
+                    ToolTip.Tip="Advance exactly one queued event (Shortcut: N)." />
             <Button Classes="pill"
                     Content="↺ Reset"
                     Command="{Binding ResetSimulationCommand}"
-                    ToolTip.Tip="Restores the initial snapshot state (Shortcut: R)." />
+                    ToolTip.Tip="Restore exact starting state for the same seed (Shortcut: R)." />
 
-            <Border Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="6,0" />
+            <Border Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="4,0" />
 
             <TextBlock Text="Speed:" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
             <ComboBox ItemsSource="{Binding SpeedOptions}"
                       SelectedItem="{Binding SelectedSpeedLabel}"
                       IsEnabled="{Binding CanRunLivePlayback}"
-                      MinWidth="74"
+                      MinWidth="70"
                       FontSize="12"
-                      ToolTip.Tip="Changes playback speed without altering event order (available in Phase 1)." />
+                      ToolTip.Tip="Changes visual playback speed without changing event order or results." />
           </StackPanel>
 
-          <Border Grid.Column="1" Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="12,0" />
+          <Border Grid.Column="1" Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="10,0" />
 
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
             <Button Classes="pill"
                     Content="+ Submit Job"
+                    Command="{Binding SubmitJobCommand}"
                     IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Submit a new job into the cluster (available in Phase 1)." />
+                    ToolTip.Tip="Submit a new job from the Client into the cluster." />
             <Button Classes="pill"
-                    Content="⚡ Crash / Recover Worker"
+                    Content="{Binding TargetWorkerActionLabel}"
+                    Command="{Binding ToggleCrashTargetWorkerCommand}"
                     IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Inject a worker crash or recovery event (available in Phase 1)." />
+                    ToolTip.Tip="Crash or recover the selected worker (or the currently busy worker) to test heartbeat timeouts and failover." />
             <Button Classes="pill"
-                    Content="⏱ Delay / Drop Msg"
+                    Content="{Binding DelayActionLabel}"
+                    Command="{Binding DelayNextMessageCommand}"
                     IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Delay or drop the next network message to observe retries and stale replies (available in Phase 1)." />
+                    ToolTip.Tip="Delay the next job/task/result message by +2600 ms to observe retries and stale reply rejection." />
+            <Button Classes="pill"
+                    Content="{Binding DropActionLabel}"
+                    Command="{Binding DropNextMessageCommand}"
+                    IsEnabled="{Binding CanRunLivePlayback}"
+                    ToolTip.Tip="Drop the next job/task/result message in flight to observe timeout recovery." />
           </StackPanel>
 
           <TextBlock Grid.Column="3"
-                     Text="Drag machine: Move · Scroll: Zoom · Double-click: Open Inside · Esc: Back"
+                     Text="Space: Play/Pause · N: Step · Esc: Back"
                      FontSize="11"
                      Foreground="{StaticResource MutedInkBrush}"
                      VerticalAlignment="Center" />
@@ -273,6 +284,7 @@
       <Grid Grid.Column="2">
         <controls:IsometricTopologyCanvas x:Name="TopologyCanvas"
                                           SimulationState="{Binding CurrentState}"
+                                          VisualTimeMs="{Binding VisualTimeMs}"
                                           ActiveNode="{Binding ActiveNode}"
                                           SelectedNodeId="{Binding SelectedNodeId}"
                                           SelectedModuleId="{Binding SelectedModuleId}"
