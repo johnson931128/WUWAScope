@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WUWAScope.App/WUWAScope.App.csproj" />
+    <Project Path="src/WUWAScope.Simulation/WUWAScope.Simulation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WUWAScope.App.Tests/WUWAScope.App.Tests.csproj" />
+    <Project Path="tests/WUWAScope.Simulation.Tests/WUWAScope.Simulation.Tests.csproj" />
+  </Folder>
+</Solution>

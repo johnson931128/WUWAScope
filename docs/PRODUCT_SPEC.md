@@ -1,6 +1,6 @@
 # WUWAScope — Product Specification (v0.2)
 
-- **Status:** Design specification (not implemented yet)
+- **Status:** Phase 0 complete (Interactive Desktop Shell with Prototype Stub data); Phase 1 live event engine is next
 - **Tech stack:** Local desktop app built with **C# (.NET) + Avalonia UI**
 - **Project overview:** [README.md](../README.md)
 - **Engineering & agent rules:** [AGENTS.md](../AGENTS.md)
@@ -42,9 +42,8 @@ The app helps you see and answer practical questions:
 | **Playback toolbar** | Play, Pause, Step, Reset, speed slider, fault buttons | Control **one** shared simulation clock |
 | **Left sidebar** | Scenario list (Task Scheduling active; others marked Planned), machine list | Pick a scenario; read its goal and simplifications |
 | **Center canvas** | Interactive diagram of Client, Coordinator, and 3 Workers with directional links | Click nodes or messages, zoom in/out, pan around |
-| **Right inspector** | Tabs for Overview, Queue, Modules, and Events | Inspect live state of whichever cluster, node, or module is selected |
-| **Bottom timeline** | Ordered list of events with simulated time, sender → receiver, and category | Filter events; click an event to highlight its path and inspect details |
-| **Explanation panel** | Short plain-English explanation + links to course theory notes | Understand *why* the current step happened |
+| **Right inspector** | Two clean tabs: **Status** (live state, queues, internal parts) and **Explain** (plain-English guide + theory links) | Inspect whichever cluster, node, or module is selected; one-click collapse to maximize the canvas |
+| **Bottom timeline** | Ordered list of events with simulated time, sender → receiver, and category | Filter events; click an event to highlight its path and inspect details; collapsible |
 
 ### 3.2 Three-Level Drill-Down (Cluster → Node → Module)
 
@@ -74,13 +73,14 @@ All three views stay live and in sync as the simulation advances.
 
 WUWAScope borrows the **clear, step-by-step visual storytelling** feel of *Designed to Scale*, while using its own native desktop layout, colors, and diagrams.
 
-- **Clean dark engineering theme:** Calm dark-slate background with high-contrast cards so active nodes and moving messages stand out clearly. (A light theme can be added later.)
+- **Warm 2.5D isometric illustration style:** A warm cream paper canvas (`#FAF6EE`) with subtle diamond isometric grid lines, crisp dark ink outlines, soft pastel 2.5D rounded machine blocks (amber for Coordinator, sky blue for Workers, a minimalist isometric laptop on a platform for Client), floating pill-shaped badges, and outlined circular packet dots gliding along isometric links. (A dark theme can be added later.)
+- **Consistent 2.5D node internals:** Zooming into a machine opens an isometric internal floorplate showing that machine's modules as matching 2.5D blocks connected by directional flow lines.
 - **Calm, purposeful motion:** Animations show real message movement and state changes — no distracting decorative effects.
 - **Role-based styling:** Client, Coordinator, and Workers have distinct, consistent visual identities.
 - **Never rely on color alone:** Every status uses both a clear text badge/icon and a distinct color.
 - **Standard status labels:** `Idle`, `Queued`, `Processing`, `Healthy`, `Suspected`, `Failed`, `Recovering`.
 - **Always-visible playback controls:** Play, Pause, Step, and Reset stay accessible whether you are viewing the Cluster, a Node, or a Module.
-- **Desktop ergonomics:** Supports keyboard navigation, clear focus rings, crisp HiDPI scaling (Skia vector rendering in Avalonia), and collapsible side/bottom panels on smaller windows.
+- **Desktop ergonomics:** Supports keyboard navigation (`Space`, `N`, `R`, `Esc`), clear focus rings, crisp HiDPI scaling (Skia vector rendering in Avalonia), and one-click collapsible left, right, and bottom panels so the 2.5D canvas can take center stage.
 
 ---
 
@@ -198,21 +198,19 @@ Every metric must clearly show a **Simulated** label. Never invent fake CPU%, me
 
 ---
 
-## 7. Planned Project Structure (C# + Avalonia UI)
+## 7. Project Structure (C# + Avalonia UI)
 
 ```text
-WUWAScope.sln
+WUWAScope.slnx
   src/
-    WUWAScope.Simulation/       # Pure C# engine: clock, event queue, models, state machines, scenarios
-    WUWAScope.App/              # Avalonia UI desktop app (Views, ViewModels, Canvas, Inspector, Timeline, Styles)
+    WUWAScope.Simulation/       # Pure C# engine: models, contracts, Phase 0 prototype stub (Phase 1 engine next)
+    WUWAScope.App/              # Avalonia UI desktop app (Views, ViewModels, 2.5D Isometric Canvas, Styles)
   tests/
-    WUWAScope.Simulation.Tests/ # xUnit tests for event ordering, replays, retries, timeouts, stale results
-    WUWAScope.App.Tests/        # ViewModel & Avalonia headless UI interaction tests
+    WUWAScope.Simulation.Tests/ # xUnit tests for models, contracts, and upcoming deterministic engine rules
+    WUWAScope.App.Tests/        # ViewModel navigation, filtering, and collapsible panel tests
   docs/
     PRODUCT_SPEC.md
 ```
-
-*This is the planned layout once implementation starts. Do not create empty placeholder folders just to match this tree.*
 
 ---
 
@@ -220,15 +218,15 @@ WUWAScope.sln
 
 ### Phase 0 — Interactive Desktop Shell
 
-- [ ] App builds and launches locally as a desktop window using documented `dotnet` commands.
-- [ ] All 5 cluster nodes (`Client`, `Coordinator`, `Worker 1`, `Worker 2`, `Worker 3`) appear with clear role labels and connecting links.
-- [ ] Clicking any node highlights it and updates the inspector.
-- [ ] Entering a node shows its role-specific internal modules (Coordinator modules differ from Worker modules).
-- [ ] Clicking different modules shows different, relevant details for each module.
-- [ ] Moving between Cluster, Node, and Module views works smoothly with a clear way back and does not lose state unexpectedly.
-- [ ] Playback toolbar and fault controls exist; controls not yet hooked to the Phase 1 engine are disabled or clearly marked as prototype/stub.
-- [ ] Resizing the desktop window keeps core controls usable without clipping or hiding essential actions.
-- [ ] `README.md` lists real, locally verified build/run/test commands.
+- [x] App builds and launches locally as a desktop window using documented `dotnet` commands.
+- [x] All 5 cluster nodes (`Client`, `Coordinator`, `Worker 1`, `Worker 2`, `Worker 3`) appear with clear role labels and connecting links.
+- [x] Clicking any node highlights it and updates the inspector.
+- [x] Entering a node shows its role-specific internal modules (Coordinator modules differ from Worker modules).
+- [x] Clicking different modules shows different, relevant details for each module.
+- [x] Moving between Cluster, Node, and Module views works smoothly with a clear way back and does not lose state unexpectedly.
+- [x] Playback toolbar and fault controls exist; controls not yet hooked to the Phase 1 engine are disabled or clearly marked as prototype/stub.
+- [x] Resizing the desktop window keeps core controls usable without clipping or hiding essential actions.
+- [x] `README.md` lists real, locally verified build/run/test commands.
 
 ### Phase 1 — First Working Simulator (MVP)
 

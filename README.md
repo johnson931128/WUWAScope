@@ -4,7 +4,7 @@
 
 WUWAScope is a local desktop app built with **C# and Avalonia UI**. Instead of reading static diagrams and guessing what happens inside a multi-machine system, you can run a live simulation, pause it, step through events one by one, break things on purpose, and look inside any machine to see how it reacts.
 
-> **Project status:** Planning and design. There is no runnable app yet. Everything below describes the planned design, not finished features.
+> **Project status:** **Phase 0 (Interactive Desktop Shell) is runnable.** The 2.5D isometric cluster canvas, Cluster → Node → Module drill-down, collapsible panels, 2-tab inspector, and filterable event timeline work locally using clearly labeled **Prototype Stub** sample data. The live discrete-event engine (`Play`, `Step`, fault injection) is planned next in **Phase 1**.
 
 ## What Makes WUWAScope Different
 
@@ -90,10 +90,30 @@ WUWAScope is a native cross-platform desktop application written in **C# (.NET)*
 - **Phase 3 — Deeper Lab Tools:** Network splits (partitions), custom delay/drop settings, timeline scrubbing, trace export/import, and side-by-side policy comparisons.
 - **Phase 4 — Live Mode (Optional):** Feed events from real local processes into the same visual workspace, clearly separated from Simulated Mode.
 
+## Running Locally (Phase 0)
+
+Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on `.NET 10.0.102`).
+
+```bash
+# Build the entire solution
+dotnet build WUWAScope.slnx
+
+# Run automated unit tests (simulation contracts + ViewModel navigation)
+dotnet test WUWAScope.slnx
+
+# Launch the local Avalonia desktop app
+dotnet run --project src/WUWAScope.App
+```
+
+**Controls inside the app:**
+- **Single-click a machine** on the 2.5D canvas to inspect its status and queues.
+- **Double-click a machine** (or click `Open Inside Machine →`) to zoom inside its 2.5D internal module layout.
+- **Scroll** to zoom, **drag empty space** to pan, or click **Fit** to re-center.
+- Press **`Esc`** to step back up one level (`Module → Node → Cluster`) without losing state.
+- Use **Hide Menu / Hide Details / Hide Timeline** in the top-right to maximize the 2.5D canvas.
+
 ## Project Documents
 
 - [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — Detailed product design, scenario walkthroughs, engine contract, and acceptance checklists.
 - [AGENTS.md](AGENTS.md) — Rules and engineering standards for AI coding agents working on this repo.
 - [GEMINI.md](GEMINI.md) — Entry file for Gemini / Antigravity pointing to `AGENTS.md`.
-
-> Build and run commands will be documented here once Phase 0 creates the `.NET` solution and verifies them locally.

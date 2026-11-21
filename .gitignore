@@ -1,0 +1,20 @@
+## .NET / Visual Studio / Rider
+bin/
+obj/
+out/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+TestResults/
+coverage/
+*.trx
+*.log
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
