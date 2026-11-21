@@ -29,10 +29,13 @@ public sealed record NodeOutlineItem(
     string Id,
     string Name,
     NodeRole Role,
+    string RoleGlyph,
     string RoleTag,
     string StatusBadge,
     bool IsSelected,
     bool IsActiveInCanvas,
+    bool IsExpanded,
+    string ChevronIcon,
     IReadOnlyList<ModuleListItem> Modules);
 
 public sealed record EventListItem(
@@ -45,6 +48,9 @@ public sealed record EventListItem(
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly ISimulationEngine _engine;
+    private readonly HashSet<string> _expandedNodeIds = ["coordinator"];
+
+    public event Action? LayoutResetRequested;
 
     [ObservableProperty]
     private SimulationState _currentState;
@@ -292,6 +298,22 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    public void ToggleNodeExpanded(string? nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return;
+        }
+
+        if (!_expandedNodeIds.Add(nodeId))
+        {
+            _expandedNodeIds.Remove(nodeId);
+        }
+
+        RefreshClusterOutline();
+    }
+
+    [RelayCommand]
     public void OpenNode(string? nodeId)
     {
         var targetId = nodeId ?? SelectedNodeId;
@@ -300,6 +322,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        _expandedNodeIds.Add(targetId);
         ActiveNodeId = targetId;
         SelectedNodeId = targetId;
         SelectedModuleId = null;
@@ -330,6 +353,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        _expandedNodeIds.Add(owner.Id);
         ActiveNodeId = owner.Id;
         SelectedNodeId = owner.Id;
         SelectedModuleId = moduleId;
@@ -428,6 +452,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ? "Prototype snapshot reset. Live simulation reset & deterministic replay arrive in Phase 1."
             : "Simulation reset to starting state.";
 
+        LayoutResetRequested?.Invoke();
         OnPropertyChanged(nameof(HasSelectedEvent));
         OnPropertyChanged(nameof(SelectedEventRoute));
         RefreshAllDerivedCollections();
@@ -474,6 +499,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ClusterNodes.Clear();
         foreach (var node in CurrentState.Nodes)
         {
+            var isExpanded = _expandedNodeIds.Contains(node.Id);
             var modules = node.Modules
                 .Select(m => new ModuleListItem(
                     m.Id,
@@ -484,14 +510,24 @@ public partial class MainWindowViewModel : ViewModelBase
                     m.Id == SelectedModuleId))
                 .ToList();
 
+            var glyph = node.Role switch
+            {
+                NodeRole.Client => "◰",
+                NodeRole.Coordinator => "◈",
+                _ => "▤"
+            };
+
             ClusterNodes.Add(new NodeOutlineItem(
                 node.Id,
                 node.Name,
                 node.Role,
+                glyph,
                 node.Role.ToString().ToUpperInvariant(),
                 FormatNodeHealth(node.Health),
                 node.Id == SelectedNodeId,
                 node.Id == ActiveNodeId,
+                isExpanded,
+                isExpanded ? "▾" : "▸",
                 modules));
         }
     }

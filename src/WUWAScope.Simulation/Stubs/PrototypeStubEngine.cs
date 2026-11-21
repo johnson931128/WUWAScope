@@ -125,7 +125,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Sends requests to the network",
                 PlainDescription: "Holds outgoing job messages briefly before putting them onto the simulated network link toward the Coordinator.",
                 Status: ModuleStatus.Idle,
-                GridX: 1.8,
+                GridX: 2.8,
                 GridY: 0.0,
                 QueueItems: [],
                 Counters: new Dictionary<string, string>
@@ -139,8 +139,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Receives finished results",
                 PlainDescription: "Listens for completion replies coming back from the Coordinator once all tasks in a job finish.",
                 Status: ModuleStatus.Idle,
-                GridX: 1.8,
-                GridY: 1.6,
+                GridX: 2.8,
+                GridY: 2.6,
                 QueueItems: [],
                 Counters: new Dictionary<string, string>
                 {
@@ -154,7 +154,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 PlainDescription: "Remembers which jobs are still running and marks a job complete when its final result arrives.",
                 Status: ModuleStatus.Processing,
                 GridX: 0.0,
-                GridY: 1.6,
+                GridY: 2.6,
                 QueueItems: ["J1: Waiting for Coordinator reply"],
                 Counters: new Dictionary<string, string>
                 {
@@ -194,7 +194,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Holds waiting tasks",
                 PlainDescription: "A first-in, first-out waiting line for tasks that have not been sent to a Worker yet — or were put back after a Worker failed.",
                 Status: ModuleStatus.Queued,
-                GridX: 1.6,
+                GridX: 2.9,
                 GridY: 0.0,
                 QueueItems: ["Task T2 (Job J1) - Waiting for Worker"],
                 Counters: new Dictionary<string, string>
@@ -210,7 +210,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Picks a healthy worker",
                 PlainDescription: "Checks the Worker Registry to find an alive worker with free capacity, stamps a new Attempt ID (like A1), and schedules dispatch.",
                 Status: ModuleStatus.Processing,
-                GridX: 3.2,
+                GridX: 5.8,
                 GridY: 0.0,
                 QueueItems: ["Dispatched T1 -> Worker 1 (Attempt A1)"],
                 Counters: new Dictionary<string, string>
@@ -226,7 +226,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Sends dispatches & replies",
                 PlainDescription: "Places task assignments onto links heading to Workers and sends final job summaries back to the Client.",
                 Status: ModuleStatus.Healthy,
-                GridX: 4.8,
+                GridX: 8.7,
                 GridY: 0.0,
                 QueueItems: ["Dispatch T1 (A1) -> Worker 1"],
                 Counters: new Dictionary<string, string>
@@ -240,8 +240,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Watches worker health",
                 PlainDescription: "Listens for periodic 'I am alive' heartbeats from every Worker. If a Worker stays silent past the timeout, this module triggers reassignment.",
                 Status: ModuleStatus.Healthy,
-                GridX: 0.6,
-                GridY: 1.8,
+                GridX: 2.9,
+                GridY: 3.0,
                 QueueItems: ["W1: HB @ 100 ms", "W2: HB @ 110 ms", "W3: HB @ 120 ms"],
                 Counters: new Dictionary<string, string>
                 {
@@ -255,8 +255,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Directory of workers",
                 PlainDescription: "Stores each Worker's latest health status, last heartbeat time, and whether it currently has room to take another task.",
                 Status: ModuleStatus.Healthy,
-                GridX: 2.4,
-                GridY: 1.8,
+                GridX: 5.8,
+                GridY: 3.0,
                 QueueItems: ["Worker 1: Busy (T1/A1)", "Worker 2: Idle (Free)", "Worker 3: Idle (Free)"],
                 Counters: new Dictionary<string, string>
                 {
@@ -270,8 +270,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Checks & accepts results",
                 PlainDescription: "Checks each incoming result's Attempt ID so outdated late replies from an old attempt can never overwrite a newer accepted result.",
                 Status: ModuleStatus.Idle,
-                GridX: 4.2,
-                GridY: 1.8,
+                GridX: 8.7,
+                GridY: 3.0,
                 QueueItems: ["No completed results yet"],
                 Counters: new Dictionary<string, string>
                 {
@@ -537,7 +537,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Runs assigned tasks",
                 PlainDescription: "Performs the simulated work for one task at a time and creates a completion result when finished.",
                 Status: isBusy ? ModuleStatus.Processing : ModuleStatus.Idle,
-                GridX: 1.8,
+                GridX: 2.9,
                 GridY: 0.0,
                 QueueItems: isBusy ? [$"Running {activeTask}"] : ["Idle (Ready)"],
                 Counters: new Dictionary<string, string>
@@ -553,26 +553,12 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Sends finished results",
                 PlainDescription: "Sends the completed task result — stamped with its Attempt ID — back to the Coordinator.",
                 Status: ModuleStatus.Idle,
-                GridX: 3.6,
+                GridX: 5.8,
                 GridY: 0.0,
                 QueueItems: [],
                 Counters: new Dictionary<string, string>
                 {
                     ["Results Sent (Simulated)"] = "0"
-                }),
-            new(
-                Id: $"{id}-heartbeat",
-                NodeId: id,
-                Name: "Heartbeat Sender",
-                ShortRole: "Sends 'I am alive' pings",
-                PlainDescription: "Periodically sends a lightweight heartbeat message to the Coordinator. If this worker crashes, heartbeats stop.",
-                Status: ModuleStatus.Healthy,
-                GridX: 0.8,
-                GridY: 1.8,
-                QueueItems: [$"Last ping @ {lastHbMs} ms"],
-                Counters: new Dictionary<string, string>
-                {
-                    ["Heartbeats Sent (Simulated)"] = "1"
                 }),
             new(
                 Id: $"{id}-local-state",
@@ -581,12 +567,26 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Tracks local progress",
                 PlainDescription: "Keeps a small local record of which task attempt is running here. Lost if the worker crashes.",
                 Status: isBusy ? ModuleStatus.Processing : ModuleStatus.Idle,
-                GridX: 2.8,
-                GridY: 1.8,
+                GridX: 2.9,
+                GridY: 3.0,
                 QueueItems: isBusy ? [$"State: Running {activeTask}"] : ["State: Empty"],
                 Counters: new Dictionary<string, string>
                 {
                     ["Used Capacity"] = isBusy ? "1 / 1" : "0 / 1"
+                }),
+            new(
+                Id: $"{id}-heartbeat",
+                NodeId: id,
+                Name: "Heartbeat Sender",
+                ShortRole: "Sends 'I am alive' pings",
+                PlainDescription: "Periodically sends a lightweight heartbeat message to the Coordinator. If this worker crashes, heartbeats stop.",
+                Status: ModuleStatus.Healthy,
+                GridX: 5.8,
+                GridY: 3.0,
+                QueueItems: [$"Last ping @ {lastHbMs} ms"],
+                Counters: new Dictionary<string, string>
+                {
+                    ["Heartbeats Sent (Simulated)"] = "1"
                 })
         };
 

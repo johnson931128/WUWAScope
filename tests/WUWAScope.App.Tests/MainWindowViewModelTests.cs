@@ -97,4 +97,25 @@ public sealed class MainWindowViewModelTests
         Assert.Equal("worker-1", vm.SelectedNodeId);
         Assert.NotEmpty(vm.SelectedEventPayload);
     }
+
+    [Fact]
+    public void ExplorerTree_ExpandAndCollapseNodes_WorksIndependently()
+    {
+        var vm = new MainWindowViewModel(new PrototypeStubEngine());
+
+        var coordInitial = Assert.Single(vm.ClusterNodes, n => n.Id == "coordinator");
+        var workerInitial = Assert.Single(vm.ClusterNodes, n => n.Id == "worker-1");
+        Assert.True(coordInitial.IsExpanded);
+        Assert.False(workerInitial.IsExpanded);
+
+        vm.ToggleNodeExpandedCommand.Execute("coordinator");
+        vm.ToggleNodeExpandedCommand.Execute("worker-1");
+
+        var coordAfter = Assert.Single(vm.ClusterNodes, n => n.Id == "coordinator");
+        var workerAfter = Assert.Single(vm.ClusterNodes, n => n.Id == "worker-1");
+        Assert.False(coordAfter.IsExpanded);
+        Assert.Equal("▸", coordAfter.ChevronIcon);
+        Assert.True(workerAfter.IsExpanded);
+        Assert.Equal("▾", workerAfter.ChevronIcon);
+    }
 }

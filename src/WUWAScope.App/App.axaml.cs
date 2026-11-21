@@ -19,9 +19,17 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var engine = new PrototypeStubEngine();
+            var vm = new MainWindowViewModel(engine);
+
+            if (desktop.Args is { Length: >= 2 } args &&
+                string.Equals(args[0], "--open-node", StringComparison.OrdinalIgnoreCase))
+            {
+                vm.OpenNodeCommand.Execute(args[1]);
+            }
+
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(engine)
+                DataContext = vm
             };
         }
 

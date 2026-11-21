@@ -34,6 +34,14 @@ public partial class MainWindow : Window
                 vm.SelectModuleCommand.Execute(moduleId);
             }
         };
+
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.LayoutResetRequested += () => TopologyCanvas.ResetCustomLayout();
+            }
+        };
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -68,4 +76,6 @@ public partial class MainWindow : Window
     private void OnZoomOutClicked(object? sender, RoutedEventArgs e) => TopologyCanvas.ZoomOut();
 
     private void OnFitViewClicked(object? sender, RoutedEventArgs e) => TopologyCanvas.FitToView();
+
+    private void OnResetLayoutClicked(object? sender, RoutedEventArgs e) => TopologyCanvas.ResetCustomLayout();
 }

@@ -11,12 +11,14 @@ public sealed class IsometricTopologyCanvas : Control
 {
     private const double IsoTileW = 68.0;
     private const double IsoTileH = 38.0;
+    private const double IsoSlope = IsoTileH / IsoTileW;
+    private const double DragThresholdPx = 6.0;
 
     private static readonly Color PaperBg = Color.Parse("#FAF6EE");
     private static readonly Color GridLineColor = Color.Parse("#EDE5D5");
     private static readonly Color InkColor = Color.Parse("#1E2430");
     private static readonly Color MutedInkColor = Color.Parse("#5E6674");
-    private static readonly Color ShadowColor = Color.Parse("#221E2430");
+    private static readonly Color ShadowColor = Color.Parse("#201E2430");
     private static readonly Color HighlightGreen = Color.Parse("#2E9E63");
     private static readonly Color WarningAmber = Color.Parse("#D9822B");
     private static readonly Color FailedCoral = Color.Parse("#D9534F");
@@ -28,6 +30,7 @@ public sealed class IsometricTopologyCanvas : Control
     private static readonly IBrush WhiteBrush = Brushes.White;
     private static readonly IBrush ShadowBrush = new SolidColorBrush(ShadowColor);
     private static readonly IPen InkOutlinePen = new Pen(InkBrush, 2.0, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round);
+    private static readonly IPen ThinInkPen = new Pen(InkBrush, 1.4, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round);
     private static readonly IPen SoftCreasePen = new Pen(new SolidColorBrush(Color.Parse("#361E2430")), 1.2, lineJoin: PenLineJoin.Round);
     private static readonly IPen PillBorderPen = new Pen(InkBrush, 1.5, lineJoin: PenLineJoin.Round);
     private static readonly IPen ActiveLinkPen = new Pen(InkBrush, 2.1, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round);
@@ -40,17 +43,29 @@ public sealed class IsometricTopologyCanvas : Control
         lineCap: PenLineCap.Round);
     private static readonly IPen SelectionHaloPen = new Pen(
         new SolidColorBrush(HighlightGreen),
-        2.4,
+        2.3,
         dashStyle: new DashStyle([6, 4], 0),
-        lineJoin: PenLineJoin.Round);
+        lineJoin: PenLineJoin.Round,
+        lineCap: PenLineCap.Round);
 
     private readonly List<HitTarget> _hitTargets = [];
+    private readonly Dictionary<string, Point> _nodeDragOffsets = [];
+    private readonly Dictionary<string, Point> _moduleDragOffsets = [];
+
     private double _zoom = 1.0;
     private Point _panOffset = new(0, 0);
     private bool _hasAutoFit;
+
+    // Pointer interaction state
     private bool _isPanning;
     private Point _panStartScreen;
     private Point _panStartOffset;
+
+    private HitTarget? _pressedTarget;
+    private Point _pressStartScreen;
+    private Point _dragItemInitialOffset;
+    private bool _isDraggingItem;
+
     private string? _hoveredId;
     private DateTime _lastClickTime;
     private string? _lastClickedId;
@@ -154,6 +169,13 @@ public sealed class IsometricTopologyCanvas : Control
         SetZoom(Math.Clamp(_zoom / 1.15, 0.45, 2.2), new Point(Bounds.Width / 2, Bounds.Height / 2));
     }
 
+    public void ResetCustomLayout()
+    {
+        _nodeDragOffsets.Clear();
+        _moduleDragOffsets.Clear();
+        FitToView();
+    }
+
     public void FitToView()
     {
         if (Bounds.Width <= 40 || Bounds.Height <= 40)
@@ -171,13 +193,13 @@ public sealed class IsometricTopologyCanvas : Control
             return;
         }
 
-        const double paddingX = 96;
-        const double paddingY = 92;
+        const double paddingX = 84;
+        const double paddingY = 84;
         var availW = Math.Max(120, Bounds.Width - paddingX * 2);
         var availH = Math.Max(120, Bounds.Height - paddingY * 2);
 
         var scale = Math.Min(availW / worldBounds.Width, availH / worldBounds.Height);
-        _zoom = Math.Clamp(scale, 0.55, 1.35);
+        _zoom = Math.Clamp(scale, 0.52, 1.35);
 
         var worldCenter = worldBounds.Center;
         _panOffset = new Point(
@@ -200,35 +222,58 @@ public sealed class IsometricTopologyCanvas : Control
         InvalidateVisual();
     }
 
-    private Point WorldToScreen(Point world) =>
-        new(world.X * _zoom + _panOffset.X, world.Y * _zoom + _panOffset.Y);
-
     private Point ScreenToWorld(Point screen) =>
         new((screen.X - _panOffset.X) / _zoom, (screen.Y - _panOffset.Y) / _zoom);
 
     private static Point GridToWorld(double gx, double gy) =>
         new((gx - gy) * IsoTileW, (gx + gy) * IsoTileH);
 
+    private Point GetNodeWorldCenter(NodeState node)
+    {
+        var basePos = GridToWorld(node.GridX, node.GridY);
+        return _nodeDragOffsets.TryGetValue(node.Id, out var offset)
+            ? new Point(basePos.X + offset.X, basePos.Y + offset.Y)
+            : basePos;
+    }
+
+    private Point GetModuleWorldCenter(ModuleState module)
+    {
+        var basePos = GridToWorld(module.GridX, module.GridY);
+        return _moduleDragOffsets.TryGetValue(module.Id, out var offset)
+            ? new Point(basePos.X + offset.X, basePos.Y + offset.Y)
+            : basePos;
+    }
+
     private Rect ComputeCurrentWorldBounds()
     {
         var points = new List<Point>();
 
-        if (ActiveNode is { } activeNode)
+        if (ActiveNode is { } activeNode && activeNode.Modules.Count > 0)
         {
+            var minGx = activeNode.Modules.Min(m => m.GridX) - 1.55;
+            var maxGx = activeNode.Modules.Max(m => m.GridX) + 1.55;
+            var minGy = activeNode.Modules.Min(m => m.GridY) - 1.45;
+            var maxGy = activeNode.Modules.Max(m => m.GridY) + 1.65;
+
+            points.Add(GridToWorld(minGx, minGy) - new Vector(0, 36));
+            points.Add(GridToWorld(maxGx, minGy));
+            points.Add(GridToWorld(maxGx, maxGy) + new Vector(0, 28));
+            points.Add(GridToWorld(minGx, maxGy));
+
             foreach (var m in activeNode.Modules)
             {
-                var p = GridToWorld(m.GridX, m.GridY);
-                points.Add(new Point(p.X - 90, p.Y - 75));
-                points.Add(new Point(p.X + 90, p.Y + 95));
+                var p = GetModuleWorldCenter(m);
+                points.Add(new Point(p.X - 95, p.Y - 75));
+                points.Add(new Point(p.X + 95, p.Y + 95));
             }
         }
         else if (SimulationState is { } state)
         {
             foreach (var n in state.Nodes)
             {
-                var p = GridToWorld(n.GridX, n.GridY);
-                points.Add(new Point(p.X - 110, p.Y - 90));
-                points.Add(new Point(p.X + 110, p.Y + 110));
+                var p = GetNodeWorldCenter(n);
+                points.Add(new Point(p.X - 110, p.Y - 98));
+                points.Add(new Point(p.X + 110, p.Y + 115));
             }
         }
 
@@ -278,9 +323,8 @@ public sealed class IsometricTopologyCanvas : Control
         var bottomRight = ScreenToWorld(viewport.BottomRight);
 
         const double cellW = 54.0;
-        const double cellH = 30.0;
+        const double cellH = cellW * IsoSlope;
 
-        // Draw crisp diagonal diamond grid lines in world space
         using (ctx.PushTransform(Matrix.CreateScale(_zoom, _zoom) * Matrix.CreateTranslation(_panOffset.X, _panOffset.Y)))
         {
             var minX = topLeft.X - cellW * 4;
@@ -288,36 +332,28 @@ public sealed class IsometricTopologyCanvas : Control
             var minY = topLeft.Y - cellH * 4;
             var maxY = bottomRight.Y + cellH * 4;
 
-            var slope = cellH / cellW;
             var step = cellH * 2;
 
-            // Family 1: y = slope * x + b
-            var bMin1 = Math.Floor((minY - slope * maxX) / step) * step;
-            var bMax1 = Math.Ceiling((maxY - slope * minX) / step) * step;
+            var bMin1 = Math.Floor((minY - IsoSlope * maxX) / step) * step;
+            var bMax1 = Math.Ceiling((maxY - IsoSlope * minX) / step) * step;
             for (var b = bMin1; b <= bMax1; b += step)
             {
-                var p1 = new Point(minX, slope * minX + b);
-                var p2 = new Point(maxX, slope * maxX + b);
-                ctx.DrawLine(GridPen, p1, p2);
+                ctx.DrawLine(GridPen, new Point(minX, IsoSlope * minX + b), new Point(maxX, IsoSlope * maxX + b));
             }
 
-            // Family 2: y = -slope * x + b
-            var bMin2 = Math.Floor((minY + slope * minX) / step) * step;
-            var bMax2 = Math.Ceiling((maxY + slope * maxX) / step) * step;
+            var bMin2 = Math.Floor((minY + IsoSlope * minX) / step) * step;
+            var bMax2 = Math.Ceiling((maxY + IsoSlope * maxX) / step) * step;
             for (var b = bMin2; b <= bMax2; b += step)
             {
-                var p1 = new Point(minX, -slope * minX + b);
-                var p2 = new Point(maxX, -slope * maxX + b);
-                ctx.DrawLine(GridPen, p1, p2);
+                ctx.DrawLine(GridPen, new Point(minX, -IsoSlope * minX + b), new Point(maxX, -IsoSlope * maxX + b));
             }
         }
     }
 
     private void RenderClusterView(DrawingContext ctx, SimulationState state)
     {
-        var nodeCenters = state.Nodes.ToDictionary(n => n.Id, n => GridToWorld(n.GridX, n.GridY));
+        var nodeCenters = state.Nodes.ToDictionary(n => n.Id, GetNodeWorldCenter);
 
-        // 1. Draw network links first (under nodes)
         foreach (var link in state.Links)
         {
             if (!nodeCenters.TryGetValue(link.SourceNodeId, out var from) ||
@@ -347,8 +383,7 @@ public sealed class IsometricTopologyCanvas : Control
                 state.SimulatedTimeMs);
         }
 
-        // 2. Draw nodes in back-to-front painter's order (ascending world Y)
-        foreach (var node in state.Nodes.OrderBy(n => GridToWorld(n.GridX, n.GridY).Y))
+        foreach (var node in state.Nodes.OrderBy(n => nodeCenters[n.Id].Y))
         {
             var center = nodeCenters[node.Id];
             var isSelected = node.Id == SelectedNodeId;
@@ -369,21 +404,15 @@ public sealed class IsometricTopologyCanvas : Control
 
     private void RenderNodeInternalView(DrawingContext ctx, NodeState node)
     {
-        var modCenters = node.Modules.ToDictionary(m => m.Id, m => GridToWorld(m.GridX, m.GridY));
+        var modCenters = node.Modules.ToDictionary(m => m.Id, GetModuleWorldCenter);
 
-        // 1. Draw large isometric chassis floorplate underneath internal modules
-        if (modCenters.Count > 0)
+        // 1. Draw true 2.5D Isometric Parallelogram Chassis Floorplate aligned with module grid axes
+        if (node.Modules.Count > 0)
         {
-            var minX = modCenters.Values.Min(p => p.X) - 105;
-            var maxX = modCenters.Values.Max(p => p.X) + 105;
-            var minY = modCenters.Values.Min(p => p.Y) - 80;
-            var maxY = modCenters.Values.Max(p => p.Y) + 95;
-
-            var plateRect = new Rect(minX, minY, maxX - minX, maxY - minY);
-            DrawChassisFloorplate(ctx, plateRect, node);
+            DrawIsometricChassisFloorplate(ctx, node);
         }
 
-        // 2. Draw internal flow links between modules
+        // 2. Draw internal directional arrows between modules
         foreach (var link in node.InternalLinks)
         {
             if (!modCenters.TryGetValue(link.SourceModuleId, out var from) ||
@@ -397,7 +426,7 @@ public sealed class IsometricTopologyCanvas : Control
         }
 
         // 3. Draw internal module 2.5D blocks back-to-front
-        foreach (var module in node.Modules.OrderBy(m => GridToWorld(m.GridX, m.GridY).Y))
+        foreach (var module in node.Modules.OrderBy(m => modCenters[m.Id].Y))
         {
             var center = modCenters[module.Id];
             var isSelected = module.Id == SelectedModuleId;
@@ -408,25 +437,65 @@ public sealed class IsometricTopologyCanvas : Control
         }
     }
 
-    private void DrawChassisFloorplate(DrawingContext ctx, Rect rect, NodeState node)
+    private static void DrawIsometricChassisFloorplate(DrawingContext ctx, NodeState node)
     {
-        var shadowRect = new Rect(rect.X + 4, rect.Y + 10, rect.Width, rect.Height);
-        ctx.DrawRectangle(ShadowBrush, null, shadowRect, 22, 22);
+        // Compute tight bounding rectangle in isometric (GridX, GridY) coordinates
+        var minGx = node.Modules.Min(m => m.GridX) - 1.55;
+        var maxGx = node.Modules.Max(m => m.GridX) + 1.55;
+        var minGy = node.Modules.Min(m => m.GridY) - 1.45;
+        var maxGy = node.Modules.Max(m => m.GridY) + 1.65;
 
-        var sideRect = new Rect(rect.X, rect.Y + 8, rect.Width, rect.Height);
+        var topCorner = GridToWorld(minGx, minGy);
+        var rightCorner = GridToWorld(maxGx, minGy);
+        var bottomCorner = GridToWorld(maxGx, maxGy);
+        var leftCorner = GridToWorld(minGx, maxGy);
+        const double plateDepth = 16.0;
+
+        var topPts = new[] { topCorner, rightCorner, bottomCorner, leftCorner };
+        var shadowPts = topPts.Select(p => new Point(p.X, p.Y + plateDepth + 10)).ToArray();
+
+        // Soft shadow underneath isometric floorplate
+        ctx.DrawGeometry(ShadowBrush, null, BuildRoundedPolygon(shadowPts, 24));
+
+        // 3D isometric side rim
         var sideColor = node.Role == NodeRole.Coordinator
-            ? Color.Parse("#EAD4A2")
+            ? Color.Parse("#E9D29E")
             : node.Role == NodeRole.Worker
-                ? Color.Parse("#C9DCF5")
-                : Color.Parse("#E3DAC9");
-        ctx.DrawRectangle(new SolidColorBrush(sideColor), InkOutlinePen, sideRect, 22, 22);
+                ? Color.Parse("#C4DAF7")
+                : Color.Parse("#E0D7C5");
 
-        ctx.DrawRectangle(new SolidColorBrush(Color.Parse("#FFFDF8")), InkOutlinePen, rect, 22, 22);
+        var sideRightColor = node.Role == NodeRole.Coordinator
+            ? Color.Parse("#DDBF7E")
+            : node.Role == NodeRole.Worker
+                ? Color.Parse("#AECBF2")
+                : Color.Parse("#D1C6B1");
 
-        // Header pill sitting cleanly on top-left edge of floorplate
+        var silhouettePts = new[]
+        {
+            topCorner,
+            rightCorner,
+            new Point(rightCorner.X, rightCorner.Y + plateDepth),
+            new Point(bottomCorner.X, bottomCorner.Y + plateDepth),
+            new Point(leftCorner.X, leftCorner.Y + plateDepth),
+            leftCorner
+        };
+        var silhouette = BuildRoundedPolygon(silhouettePts, 22);
+
+        using (ctx.PushGeometryClip(silhouette))
+        {
+            var leftRim = BuildQuad(leftCorner, bottomCorner, new Point(bottomCorner.X, bottomCorner.Y + plateDepth), new Point(leftCorner.X, leftCorner.Y + plateDepth));
+            var rightRim = BuildQuad(bottomCorner, rightCorner, new Point(rightCorner.X, rightCorner.Y + plateDepth), new Point(bottomCorner.X, bottomCorner.Y + plateDepth));
+            ctx.DrawGeometry(new SolidColorBrush(sideColor), null, leftRim);
+            ctx.DrawGeometry(new SolidColorBrush(sideRightColor), null, rightRim);
+            ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FFFDF7")), SoftCreasePen, BuildRoundedPolygon(topPts, 22));
+        }
+
+        ctx.DrawGeometry(null, InkOutlinePen, silhouette);
+
+        // Header pill sitting cleanly near top vertex of floorplate
         DrawPillBadge(
             ctx,
-            new Point(rect.X + 130, rect.Y),
+            new Point(topCorner.X, topCorner.Y - 12),
             $"Inside {node.Name} · {node.Modules.Count} Modules",
             GetHealthAccentColor(node.Health),
             fontSize: 12.5,
@@ -438,15 +507,16 @@ public sealed class IsometricTopologyCanvas : Control
         var lift = isHovered ? -4.0 : 0.0;
         var c = new Point(center.X, center.Y + lift);
         const double halfW = 86;
-        const double halfH = 48;
+        const double halfH = halfW * IsoSlope;
         const double depth = 18;
 
         // Ground shadow
         DrawRoundedDiamond(ctx, new Point(center.X, center.Y + depth + 8), halfW + 4, halfH + 3, 14, ShadowBrush, null);
 
+        // Exact 6-point mathematically parallel selection halo
         if (isSelected)
         {
-            DrawRoundedDiamond(ctx, new Point(c.X, c.Y + depth / 2), halfW + 13, halfH + 10, 18, null, SelectionHaloPen);
+            DrawSlabSelectionHalo(ctx, c, halfW, halfH, depth, cornerRadius: 14);
         }
 
         // Rounded stone isometric base platform
@@ -461,77 +531,124 @@ public sealed class IsometricTopologyCanvas : Control
             rightColor: Color.Parse("#D7CCB8"),
             cornerRadius: 14);
 
-        // Stylized isometric laptop keyboard deck on platform
-        var kbCenter = new Point(c.X + 6, c.Y + 6);
-        DrawRoundedDiamond(
-            ctx,
-            kbCenter,
-            40,
-            21,
-            5,
-            new SolidColorBrush(Color.Parse("#FFFFFF")),
-            new Pen(InkBrush, 1.5, lineJoin: PenLineJoin.Round));
+        // === Precision-Engineered 3D Isometric Laptop (shared hinge vertices) ===
+        // Isometric unit steps along screen-width (up-right) and deck-depth (down-right)
+        var hingeStart = new Point(c.X - 38, c.Y + 4);               // Back-left hinge corner
+        var hingeVec = new Vector(46, -46 * IsoSlope);                // Along hinge (up-right, exact 2:1 iso angle)
+        var deckVec = new Vector(38, 38 * IsoSlope);                  // Extending forward-right (exact 2:1 iso angle)
+        var screenUpVec = new Vector(-4.5, -45);                      // Crisp slightly-tilted upright screen
+        const double baseThick = 5.0;
 
-        // Tiny keyboard dots
-        var keyBrush = new SolidColorBrush(Color.Parse("#C8BFAF"));
-        for (var row = -1; row <= 1; row++)
+        var h0 = hingeStart;
+        var h1 = h0 + hingeVec;
+        var f0 = h0 + deckVec;
+        var f1 = h1 + deckVec;
+
+        // Soft contact shadow directly under laptop body
+        var lapShadow = BuildRoundedPolygon(
+            [
+                new Point(h0.X + 2, h0.Y + baseThick + 3),
+                new Point(h1.X + 2, h1.Y + baseThick + 3),
+                new Point(f1.X + 2, f1.Y + baseThick + 3),
+                new Point(f0.X + 2, f0.Y + baseThick + 3)
+            ],
+            4);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#241E2430")), null, lapShadow);
+
+        // Laptop 3D metallic base rim (front-left and front-right visible thickness)
+        var deckFrontLeft = BuildQuad(h0, f0, new Point(f0.X, f0.Y + baseThick), new Point(h0.X, h0.Y + baseThick));
+        var deckFrontRight = BuildQuad(f0, f1, new Point(f1.X, f1.Y + baseThick), new Point(f0.X, f0.Y + baseThick));
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#D7D1C6")), ThinInkPen, deckFrontLeft);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#C4BDB0")), ThinInkPen, deckFrontRight);
+
+        // Laptop top keyboard deck (clean rounded isometric quad)
+        var deckTop = BuildRoundedPolygon([h0, h1, f1, f0], 4.5);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FDFBF7")), ThinInkPen, deckTop);
+
+        // Geometrically aligned isometric keyboard keys (4 rows x 6 columns)
+        var keyFill = new SolidColorBrush(Color.Parse("#DCD6CB"));
+        var keyPen = new Pen(new SolidColorBrush(Color.Parse("#AFA89C")), 0.65);
+        for (var row = 0; row < 4; row++)
         {
-            for (var col = -2; col <= 1; col++)
+            var v0 = 0.14 + row * 0.14;
+            var v1 = v0 + 0.095;
+            for (var col = 0; col < 6; col++)
             {
-                var kx = kbCenter.X + col * 8 - row * 5;
-                var ky = kbCenter.Y + col * 4.2 + row * 3.5 - 2;
-                ctx.DrawEllipse(keyBrush, null, new Point(kx, ky), 2.1, 1.3);
+                var u0 = 0.09 + col * 0.14;
+                var u1 = u0 + 0.11;
+
+                var kp0 = h0 + hingeVec * u0 + deckVec * v0;
+                var kp1 = h0 + hingeVec * u1 + deckVec * v0;
+                var kp2 = h0 + hingeVec * u1 + deckVec * v1;
+                var kp3 = h0 + hingeVec * u0 + deckVec * v1;
+                ctx.DrawGeometry(keyFill, keyPen, BuildQuad(kp0, kp1, kp2, kp3));
             }
         }
 
-        // Stylized tilted laptop screen
-        var screenGeo = new StreamGeometry();
-        using (var g = screenGeo.Open())
-        {
-            g.BeginFigure(new Point(c.X - 38, c.Y - 4), true);
-            g.LineTo(new Point(c.X + 8, c.Y - 29));
-            g.LineTo(new Point(c.X + 8, c.Y - 70));
-            g.LineTo(new Point(c.X - 38, c.Y - 45));
-            g.EndFigure(true);
-        }
-        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#2B313F")), InkOutlinePen, screenGeo);
+        // Centered isometric trackpad near front edge of deck
+        var tp0 = h0 + hingeVec * 0.34 + deckVec * 0.74;
+        var tp1 = h0 + hingeVec * 0.66 + deckVec * 0.74;
+        var tp2 = h0 + hingeVec * 0.66 + deckVec * 0.92;
+        var tp3 = h0 + hingeVec * 0.34 + deckVec * 0.92;
+        ctx.DrawGeometry(
+            new SolidColorBrush(Color.Parse("#EFEAE0")),
+            new Pen(new SolidColorBrush(Color.Parse("#B2AAA0")), 0.9),
+            BuildQuad(tp0, tp1, tp2, tp3));
 
-        var innerScreen = new StreamGeometry();
-        using (var g = innerScreen.Open())
-        {
-            g.BeginFigure(new Point(c.X - 33, c.Y - 10), true);
-            g.LineTo(new Point(c.X + 3, c.Y - 29));
-            g.LineTo(new Point(c.X + 3, c.Y - 62));
-            g.LineTo(new Point(c.X - 33, c.Y - 43));
-            g.EndFigure(true);
-        }
-        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FAF7F2")), null, innerScreen);
+        // Laptop lid outer back edge (gives real 3D thickness to the screen)
+        var lidBack = new Vector(-3.5, -1.8);
+        var s0 = h0;
+        var s1 = h1;
+        var s2 = h1 + screenUpVec;
+        var s3 = h0 + screenUpVec;
 
-        // Mini app content bar inside laptop screen
-        var barGeo = new StreamGeometry();
-        using (var g = barGeo.Open())
-        {
-            g.BeginFigure(new Point(c.X - 28, c.Y - 30), true);
-            g.LineTo(new Point(c.X - 2, c.Y - 44));
-            g.LineTo(new Point(c.X - 2, c.Y - 52));
-            g.LineTo(new Point(c.X - 28, c.Y - 38));
-            g.EndFigure(true);
-        }
-        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#C8BDF0")), null, barGeo);
+        var lidSide = BuildQuad(s0, s3, s3 + lidBack, s0 + lidBack);
+        var lidTop = BuildQuad(s3, s2, s2 + lidBack, s3 + lidBack);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#4B5364")), ThinInkPen, lidSide);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#5F687B")), ThinInkPen, lidTop);
 
-        // Top floating pill ("Client · Job J1")
-        DrawPillBadge(ctx, new Point(c.X - 10, c.Y - 84), "Client · Job Submitter", HighlightGreen, fontSize: 12, bold: true);
+        // Dark charcoal screen bezel hinged cleanly along h0 -> h1
+        var bezel = BuildQuad(s0, s1, s2, s3);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#232936")), InkOutlinePen, bezel);
+
+        // Crisp inset white inner display
+        Point ScreenPt(double u, double v) => s0 + hingeVec * u + screenUpVec * v;
+        var innerScreen = BuildQuad(ScreenPt(0.08, 0.12), ScreenPt(0.92, 0.12), ScreenPt(0.92, 0.88), ScreenPt(0.08, 0.88));
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FFFEFA")), null, innerScreen);
+
+        // Mini window chrome bar + 3 colored dots inside screen
+        var topBarDividerStart = ScreenPt(0.08, 0.76);
+        var topBarDividerEnd = ScreenPt(0.92, 0.76);
+        ctx.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#E3DCCE")), 1.0), topBarDividerStart, topBarDividerEnd);
+        ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#E86E65")), null, ScreenPt(0.16, 0.82), 1.6, 1.6);
+        ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#F1BD53")), null, ScreenPt(0.24, 0.82), 1.6, 1.6);
+        ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#4CB771")), null, ScreenPt(0.32, 0.82), 1.6, 1.6);
+
+        // Soft lilac hero strip + two clean content bars inside screen
+        var heroStrip = BuildQuad(ScreenPt(0.14, 0.48), ScreenPt(0.86, 0.48), ScreenPt(0.86, 0.69), ScreenPt(0.14, 0.69));
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#C7BCF2")), null, heroStrip);
+
+        var line1 = BuildQuad(ScreenPt(0.14, 0.34), ScreenPt(0.68, 0.34), ScreenPt(0.68, 0.41), ScreenPt(0.14, 0.41));
+        var line2 = BuildQuad(ScreenPt(0.14, 0.22), ScreenPt(0.54, 0.22), ScreenPt(0.54, 0.29), ScreenPt(0.14, 0.29));
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#E5DFD3")), null, line1);
+        ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#ECE7DC")), null, line2);
+
+        // Subtle hinge cylinder crease
+        ctx.DrawLine(new Pen(InkBrush, 2.2, lineCap: PenLineCap.Round), h0 + hingeVec * 0.15, h0 + hingeVec * 0.85);
+
+        // Top floating pill ("Client · Job Submitter")
+        DrawPillBadge(ctx, new Point(c.X - 6, c.Y - 76), "Client · Job Submitter", HighlightGreen, fontSize: 12, bold: true);
 
         // Bottom status pill
         DrawPillBadge(
             ctx,
-            new Point(c.X, c.Y + halfH + depth + 16),
+            new Point(c.X, c.Y + halfH + depth + 18),
             FormatHealthPill(node.Health),
             GetHealthAccentColor(node.Health),
             fontSize: 11,
             bold: false);
 
-        _hitTargets.Add(new HitTarget(node.Id, IsModule: false, new Rect(c.X - halfW, c.Y - 92, halfW * 2, halfH * 2 + depth + 100)));
+        _hitTargets.Add(new HitTarget(node.Id, IsModule: false, new Rect(c.X - halfW, c.Y - 84, halfW * 2, halfH * 2 + depth + 92)));
     }
 
     private void DrawServerCubeNode(DrawingContext ctx, NodeState node, Point center, bool isSelected, bool isHovered)
@@ -540,7 +657,7 @@ public sealed class IsometricTopologyCanvas : Control
         var c = new Point(center.X, center.Y + lift);
         var isCoord = node.Role == NodeRole.Coordinator;
         var halfW = isCoord ? 76.0 : 66.0;
-        var halfH = isCoord ? 43.0 : 37.0;
+        var halfH = halfW * IsoSlope;
         var depth = isCoord ? 34.0 : 30.0;
 
         var (topColor, leftColor, rightColor) = GetNodePalette(node);
@@ -548,14 +665,14 @@ public sealed class IsometricTopologyCanvas : Control
         // Soft ground shadow
         DrawRoundedDiamond(ctx, new Point(center.X, center.Y + depth + 10), halfW + 3, halfH + 2, 14, ShadowBrush, null);
 
+        // Exact 6-point mathematically parallel selection halo
         if (isSelected)
         {
-            DrawRoundedDiamond(ctx, new Point(c.X, c.Y + depth * 0.45), halfW + 13, halfH + 10, 18, null, SelectionHaloPen);
+            DrawSlabSelectionHalo(ctx, c, halfW, halfH, depth, cornerRadius: 14);
         }
 
         DrawIsometricSlab(ctx, c, halfW, halfH, depth, topColor, leftColor, rightColor, cornerRadius: 14);
 
-        // Role minimalist icon centered on top face
         if (isCoord)
         {
             DrawCoordinatorIcon(ctx, new Point(c.X, c.Y - 12));
@@ -565,52 +682,62 @@ public sealed class IsometricTopologyCanvas : Control
             DrawWorkerServerIcon(ctx, new Point(c.X, c.Y - 10));
         }
 
-        // Crisp label on top face
         DrawCenteredText(ctx, node.Name, new Point(c.X, c.Y + 12), 13.5, InkBrush, FontWeight.Bold);
 
-        // Role tag / subtitle below node as crisp pill
         var pillText = node.Health == NodeHealthStatus.Processing && node.ActiveTaskCount > 0
             ? $"{FormatHealthPill(node.Health)} · {node.ActiveTaskCount} task"
             : FormatHealthPill(node.Health);
 
         DrawPillBadge(
             ctx,
-            new Point(c.X, c.Y + halfH + depth + 14),
+            new Point(c.X, c.Y + halfH + depth + 17),
             pillText,
             GetHealthAccentColor(node.Health),
             fontSize: 11,
             bold: false);
 
-        _hitTargets.Add(new HitTarget(node.Id, IsModule: false, new Rect(c.X - halfW, c.Y - halfH, halfW * 2, halfH * 2 + depth + 30)));
+        _hitTargets.Add(new HitTarget(node.Id, IsModule: false, new Rect(c.X - halfW, c.Y - halfH, halfW * 2, halfH * 2 + depth + 28)));
     }
 
     private void DrawModuleBlock(DrawingContext ctx, ModuleState module, Point center, bool isSelected, bool isHovered)
     {
         var lift = isHovered ? -3.0 : 0.0;
         var c = new Point(center.X, center.Y + lift);
-        const double halfW = 62;
-        const double halfH = 34;
-        const double depth = 22;
+        const double halfW = 70;
+        const double halfH = halfW * IsoSlope;
+        const double depth = 24;
 
         var (topColor, leftColor, rightColor) = GetModulePalette(module.Status);
 
-        DrawRoundedDiamond(ctx, new Point(center.X, center.Y + depth + 7), halfW + 2, halfH + 2, 11, ShadowBrush, null);
+        DrawRoundedDiamond(ctx, new Point(center.X, center.Y + depth + 8), halfW + 3, halfH + 2, 12, ShadowBrush, null);
 
         if (isSelected)
         {
-            DrawRoundedDiamond(ctx, new Point(c.X, c.Y + depth * 0.4), halfW + 10, halfH + 8, 14, null, SelectionHaloPen);
+            DrawSlabSelectionHalo(ctx, c, halfW, halfH, depth, cornerRadius: 12);
         }
 
-        DrawIsometricSlab(ctx, c, halfW, halfH, depth, topColor, leftColor, rightColor, cornerRadius: 11);
+        DrawIsometricSlab(ctx, c, halfW, halfH, depth, topColor, leftColor, rightColor, cornerRadius: 12);
 
-        DrawCenteredText(ctx, module.Name, new Point(c.X, c.Y - 3), 12, InkBrush, FontWeight.Bold);
-        DrawCenteredText(ctx, FormatModuleShortStatus(module.Status), new Point(c.X, c.Y + 13), 10.5, MutedInkBrush, FontWeight.SemiBold);
+        // Clean 1- or 2-line label so long names stay neatly inside the diamond face
+        var displayName = WrapModuleTitle(module.Name);
+        if (displayName.Contains('\n'))
+        {
+            var lines = displayName.Split('\n');
+            DrawCenteredText(ctx, lines[0], new Point(c.X, c.Y - 11), 11.5, InkBrush, FontWeight.Bold);
+            DrawCenteredText(ctx, lines[1], new Point(c.X, c.Y + 3), 11.5, InkBrush, FontWeight.Bold);
+            DrawCenteredText(ctx, FormatModuleShortStatus(module.Status), new Point(c.X, c.Y + 18), 10.0, MutedInkBrush, FontWeight.SemiBold);
+        }
+        else
+        {
+            DrawCenteredText(ctx, displayName, new Point(c.X, c.Y - 4), 12.2, InkBrush, FontWeight.Bold);
+            DrawCenteredText(ctx, FormatModuleShortStatus(module.Status), new Point(c.X, c.Y + 13), 10.5, MutedInkBrush, FontWeight.SemiBold);
+        }
 
         if (!string.IsNullOrWhiteSpace(module.ActiveHint))
         {
             DrawPillBadge(
                 ctx,
-                new Point(c.X, c.Y + halfH + depth + 10),
+                new Point(c.X, c.Y + halfH + depth + 15),
                 module.ActiveHint,
                 GetModuleAccentColor(module.Status),
                 fontSize: 10.5,
@@ -618,6 +745,28 @@ public sealed class IsometricTopologyCanvas : Control
         }
 
         _hitTargets.Add(new HitTarget(module.Id, IsModule: true, new Rect(c.X - halfW, c.Y - halfH, halfW * 2, halfH * 2 + depth + 24)));
+    }
+
+    /// <summary>
+    /// Draws a mathematically parallel 6-point dashed selection ring around any 3D isometric slab.
+    /// Every diagonal edge matches the exact isometric slope and corner rounding of the block.
+    /// </summary>
+    private static void DrawSlabSelectionHalo(
+        DrawingContext ctx,
+        Point c,
+        double halfW,
+        double halfH,
+        double depth,
+        double cornerRadius)
+    {
+        const double gap = 9.0;
+        var haloW = halfW + gap;
+        var haloH = halfH + gap * IsoSlope;
+        // Expand vertically symmetrically around top and bottom of slab
+        var haloCenter = new Point(c.X, c.Y - gap * 0.35);
+        var haloDepth = depth + gap * 0.70;
+        var haloGeo = BuildSlabSilhouette(haloCenter, haloW, haloH, haloDepth, cornerRadius + 3.0);
+        ctx.DrawGeometry(null, SelectionHaloPen, haloGeo);
     }
 
     private void DrawIsometricLink(
@@ -630,7 +779,6 @@ public sealed class IsometricTopologyCanvas : Control
         IReadOnlyList<MessageState> messages,
         long simulatedTimeMs)
     {
-        // Trim start/end slightly away from node centers so arrowheads touch node rims cleanly
         var dir = to - from;
         var len = Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
         if (len < 1)
@@ -640,10 +788,9 @@ public sealed class IsometricTopologyCanvas : Control
 
         var ux = dir.X / len;
         var uy = dir.Y / len;
-        var start = new Point(from.X + ux * 62, from.Y + uy * 36 + 10);
-        var end = new Point(to.X - ux * 62, to.Y - uy * 36 + 10);
+        var start = new Point(from.X + ux * 64, from.Y + uy * 38 + 10);
+        var end = new Point(to.X - ux * 64, to.Y - uy * 38 + 10);
 
-        // Build a gentle bent path for visual elegance
         var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2);
         var perpOffset = isHeartbeat ? -14.0 : 14.0;
         var ctrl = new Point(mid.X - uy * perpOffset, mid.Y + ux * perpOffset);
@@ -665,11 +812,9 @@ public sealed class IsometricTopologyCanvas : Control
         ctx.DrawGeometry(null, pen, pathGeo);
         DrawArrowHead(ctx, ctrl, end, isHighlighted ? new SolidColorBrush(HighlightGreen) : (isHeartbeat ? MutedInkBrush : InkBrush));
 
-        // Compute curve label position slightly closer to target so labels never crowd Coordinator's badge
         var labelT = isHeartbeat ? 0.62 : 0.52;
         var curveLabelPos = EvalQuadratic(start, ctrl, end, labelT);
 
-        // Draw state-driven in-flight packet dots along the curve
         foreach (var msg in messages)
         {
             var span = Math.Max(1, msg.DeliverAtMs - msg.SentAtMs);
@@ -683,12 +828,10 @@ public sealed class IsometricTopologyCanvas : Control
             var dotColor = msg.Kind == MessageKind.Heartbeat ? Color.Parse("#4B8BF5") : HighlightGreen;
             var dotPen = new Pen(InkBrush, 1.8);
 
-            // Trailing hollow dot + leading solid dot (clean editorial packet grammar)
             ctx.DrawEllipse(WhiteBrush, new Pen(new SolidColorBrush(dotColor), 2.0), ptTrail, 5.0, 5.0);
             ctx.DrawEllipse(new SolidColorBrush(dotColor), dotPen, ptMain, 6.0, 6.0);
         }
 
-        // Draw crisp white pill label cleanly offset from the link curve
         var isVerticalLink = Math.Abs(end.Y - start.Y) > Math.Abs(end.X - start.X) * 1.4;
         var pillOffset = isVerticalLink
             ? new Point(curveLabelPos.X + 56, curveLabelPos.Y + 6)
@@ -721,8 +864,9 @@ public sealed class IsometricTopologyCanvas : Control
 
         var ux = dir.X / len;
         var uy = dir.Y / len;
-        var start = new Point(from.X + ux * 46, from.Y + uy * 26 + 6);
-        var end = new Point(to.X - ux * 46, to.Y - uy * 26 + 6);
+        // Trim smoothly outside the 70x39 module slab footprint
+        var start = new Point(from.X + ux * 64, from.Y + uy * 38 + 8);
+        var end = new Point(to.X - ux * 64, to.Y - uy * 38 + 8);
 
         var pen = isHighlighted
             ? HighlightLinkPen
@@ -733,8 +877,10 @@ public sealed class IsometricTopologyCanvas : Control
         ctx.DrawLine(pen, start, end);
         DrawArrowHead(ctx, start, end, isHighlighted ? new SolidColorBrush(HighlightGreen) : (isDashed ? MutedInkBrush : InkBrush));
 
-        var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2 - 12);
-        DrawPillBadge(ctx, mid, label, HighlightGreen, fontSize: 10, bold: false, showDot: false);
+        // Position label cleanly at midpoint, offset perpendicular to the arrow so it never crosses the line
+        var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+        var pillPos = new Point(mid.X, mid.Y - 16);
+        DrawPillBadge(ctx, pillPos, label, HighlightGreen, fontSize: 10.2, bold: false, showDot: false);
     }
 
     private static void DrawArrowHead(DrawingContext ctx, Point from, Point to, IBrush brush)
@@ -772,32 +918,20 @@ public sealed class IsometricTopologyCanvas : Control
         Color rightColor,
         double cornerRadius)
     {
-        // Left shaded face
-        var leftFace = new StreamGeometry();
-        using (var g = leftFace.Open())
-        {
-            g.BeginFigure(new Point(center.X - halfW, center.Y), true);
-            g.LineTo(new Point(center.X, center.Y + halfH));
-            g.LineTo(new Point(center.X, center.Y + halfH + depth));
-            g.LineTo(new Point(center.X - halfW, center.Y + depth));
-            g.EndFigure(true);
-        }
+        var leftFace = BuildQuad(
+            new Point(center.X - halfW, center.Y),
+            new Point(center.X, center.Y + halfH),
+            new Point(center.X, center.Y + halfH + depth),
+            new Point(center.X - halfW, center.Y + depth));
 
-        // Right shaded face
-        var rightFace = new StreamGeometry();
-        using (var g = rightFace.Open())
-        {
-            g.BeginFigure(new Point(center.X, center.Y + halfH), true);
-            g.LineTo(new Point(center.X + halfW, center.Y));
-            g.LineTo(new Point(center.X + halfW, center.Y + depth));
-            g.LineTo(new Point(center.X, center.Y + halfH + depth));
-            g.EndFigure(true);
-        }
+        var rightFace = BuildQuad(
+            new Point(center.X, center.Y + halfH),
+            new Point(center.X + halfW, center.Y),
+            new Point(center.X + halfW, center.Y + depth),
+            new Point(center.X, center.Y + halfH + depth));
 
-        // Outer silhouette path with rounded bottom corners
         var silhouette = BuildSlabSilhouette(center, halfW, halfH, depth, cornerRadius);
 
-        // Clip faces inside rounded silhouette for clean rounded isometric corners
         using (ctx.PushGeometryClip(silhouette))
         {
             ctx.DrawGeometry(new SolidColorBrush(leftColor), null, leftFace);
@@ -806,20 +940,31 @@ public sealed class IsometricTopologyCanvas : Control
             ctx.DrawLine(SoftCreasePen, new Point(center.X, center.Y + halfH - 2), new Point(center.X, center.Y + halfH + depth));
         }
 
-        // Crisp dark ink outer contour
         ctx.DrawGeometry(null, InkOutlinePen, silhouette);
+    }
+
+    private static StreamGeometry BuildQuad(Point p0, Point p1, Point p2, Point p3)
+    {
+        var geo = new StreamGeometry();
+        using var g = geo.Open();
+        g.BeginFigure(p0, true);
+        g.LineTo(p1);
+        g.LineTo(p2);
+        g.LineTo(p3);
+        g.EndFigure(true);
+        return geo;
     }
 
     private static StreamGeometry BuildSlabSilhouette(Point c, double hw, double hh, double d, double r)
     {
         var pts = new[]
         {
-            new Point(c.X, c.Y - hh),             // Top
-            new Point(c.X + hw, c.Y),             // Top-right
-            new Point(c.X + hw, c.Y + d),         // Bottom-right
-            new Point(c.X, c.Y + hh + d),         // Bottom
-            new Point(c.X - hw, c.Y + d),         // Bottom-left
-            new Point(c.X - hw, c.Y)              // Top-left
+            new Point(c.X, c.Y - hh),
+            new Point(c.X + hw, c.Y),
+            new Point(c.X + hw, c.Y + d),
+            new Point(c.X, c.Y + hh + d),
+            new Point(c.X - hw, c.Y + d),
+            new Point(c.X - hw, c.Y)
         };
 
         return BuildRoundedPolygon(pts, r);
@@ -842,8 +987,7 @@ public sealed class IsometricTopologyCanvas : Control
             new Point(c.X - hw, c.Y)
         };
 
-        var geo = BuildRoundedPolygon(pts, r);
-        ctx.DrawGeometry(fill, pen, geo);
+        ctx.DrawGeometry(fill, pen, BuildRoundedPolygon(pts, r));
     }
 
     private static StreamGeometry BuildRoundedPolygon(Point[] pts, double radius)
@@ -881,6 +1025,23 @@ public sealed class IsometricTopologyCanvas : Control
 
         g.EndFigure(true);
         return geo;
+    }
+
+    private static string WrapModuleTitle(string name)
+    {
+        if (name.Length <= 11 || !name.Contains(' '))
+        {
+            return name;
+        }
+
+        var parts = name.Split(' ');
+        if (parts.Length == 2)
+        {
+            return $"{parts[0]}\n{parts[1]}";
+        }
+
+        var mid = parts.Length / 2;
+        return $"{string.Join(' ', parts.Take(mid))}\n{string.Join(' ', parts.Skip(mid))}";
     }
 
     private static void DrawCoordinatorIcon(DrawingContext ctx, Point center)
@@ -925,9 +1086,7 @@ public sealed class IsometricTopologyCanvas : Control
         var h = ft.Height + padY * 2;
         var pillRect = new Rect(center.X - w / 2, center.Y - h / 2, w, h);
 
-        // Soft drop shadow
         ctx.DrawRectangle(ShadowBrush, null, new Rect(pillRect.X, pillRect.Y + 2.5, w, h), h / 2, h / 2);
-        // White pill with crisp dark border
         ctx.DrawRectangle(WhiteBrush, PillBorderPen, pillRect, h / 2, h / 2);
 
         if (showDot)
@@ -965,7 +1124,6 @@ public sealed class IsometricTopologyCanvas : Control
             return (Color.Parse("#FAE0A6"), Color.Parse("#EEC87B"), Color.Parse("#E0B55E"));
         }
 
-        // Workers
         return (Color.Parse("#C9DFFB"), Color.Parse("#AFCBF5"), Color.Parse("#94B6EB"));
     }
 
@@ -1050,24 +1208,12 @@ public sealed class IsometricTopologyCanvas : Control
             var hit = HitTest(worldPos);
             if (hit is not null)
             {
-                var now = DateTime.UtcNow;
-                var isDoubleClick = _lastClickedId == hit.Id && (now - _lastClickTime).TotalMilliseconds < 380;
-                _lastClickedId = hit.Id;
-                _lastClickTime = now;
-
-                if (hit.IsModule)
-                {
-                    ModuleSelected?.Invoke(hit.Id);
-                }
-                else
-                {
-                    NodeSelected?.Invoke(hit.Id);
-                    if (isDoubleClick)
-                    {
-                        NodeDoubleClicked?.Invoke(hit.Id);
-                    }
-                }
-
+                _pressedTarget = hit;
+                _pressStartScreen = screenPos;
+                _isDraggingItem = false;
+                var map = hit.IsModule ? _moduleDragOffsets : _nodeDragOffsets;
+                _dragItemInitialOffset = map.TryGetValue(hit.Id, out var existing) ? existing : new Point(0, 0);
+                e.Pointer.Capture(this);
                 e.Handled = true;
             }
             else
@@ -1090,6 +1236,28 @@ public sealed class IsometricTopologyCanvas : Control
             return;
         }
 
+        if (_pressedTarget is not null)
+        {
+            var screenDelta = screenPos - _pressStartScreen;
+            var dist = Math.Sqrt(screenDelta.X * screenDelta.X + screenDelta.Y * screenDelta.Y);
+            if (!_isDraggingItem && dist >= DragThresholdPx)
+            {
+                _isDraggingItem = true;
+                Cursor = new Cursor(StandardCursorType.SizeAll);
+            }
+
+            if (_isDraggingItem)
+            {
+                var worldDelta = new Point(screenDelta.X / _zoom, screenDelta.Y / _zoom);
+                var nextOffset = new Point(_dragItemInitialOffset.X + worldDelta.X, _dragItemInitialOffset.Y + worldDelta.Y);
+                var map = _pressedTarget.IsModule ? _moduleDragOffsets : _nodeDragOffsets;
+                map[_pressedTarget.Id] = nextOffset;
+                InvalidateVisual();
+            }
+
+            return;
+        }
+
         var hit = HitTest(ScreenToWorld(screenPos));
         var nextHover = hit?.Id;
         if (nextHover != _hoveredId)
@@ -1103,11 +1271,44 @@ public sealed class IsometricTopologyCanvas : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+
         if (_isPanning)
         {
             _isPanning = false;
             e.Pointer.Capture(null);
             Cursor = Cursor.Default;
+            return;
+        }
+
+        if (_pressedTarget is not null)
+        {
+            var target = _pressedTarget;
+            var wasDrag = _isDraggingItem;
+            _pressedTarget = null;
+            _isDraggingItem = false;
+            e.Pointer.Capture(null);
+            Cursor = _hoveredId is not null ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+
+            if (!wasDrag)
+            {
+                var now = DateTime.UtcNow;
+                var isDoubleClick = _lastClickedId == target.Id && (now - _lastClickTime).TotalMilliseconds < 380;
+                _lastClickedId = target.Id;
+                _lastClickTime = now;
+
+                if (target.IsModule)
+                {
+                    ModuleSelected?.Invoke(target.Id);
+                }
+                else
+                {
+                    NodeSelected?.Invoke(target.Id);
+                    if (isDoubleClick)
+                    {
+                        NodeDoubleClicked?.Invoke(target.Id);
+                    }
+                }
+            }
         }
     }
 
