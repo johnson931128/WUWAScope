@@ -3,266 +3,238 @@
         xmlns:vm="using:WUWAScope.App.ViewModels"
         xmlns:controls="using:WUWAScope.App.Controls"
         xmlns:contracts="using:WUWAScope.Simulation.Contracts"
+        xmlns:conv="using:WUWAScope.App.Converters"
         x:Class="WUWAScope.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="WUWAScope — Distributed Systems Simulation Lab"
-        Width="1280"
-        Height="800"
+        Width="1300"
+        Height="820"
         MinWidth="960"
-        MinHeight="640"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen">
 
-  <Grid RowDefinitions="Auto,*,Auto,Auto">
+  <Grid RowDefinitions="Auto,*">
 
-    <!-- 1. TOP HEADER & PLAYBACK TOOLBAR -->
+    <!-- 1. SERENE SINGLE-ROW TOP BAR -->
     <Border Grid.Row="0"
             Background="{StaticResource PanelBgBrush}"
             BorderBrush="{StaticResource PanelBorderBrush}"
-            BorderThickness="0,0,0,1.5"
-            Padding="14,10">
-      <Grid RowDefinitions="Auto,Auto">
+            BorderThickness="0,0,0,1"
+            Padding="14,8">
+      <Grid ColumnDefinitions="Auto,*,Auto">
 
-        <!-- Row 1: App Title, Mode Badges, Clock, Panel Toggles -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <Border Background="{StaticResource InkBrush}" CornerRadius="8" Padding="8,4">
-              <TextBlock Text="WUWAScope" Foreground="White" FontWeight="Bold" FontSize="13" />
-            </Border>
+        <!-- Left: Brand + Scenario Picker + Simulated Badge -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Border Background="{StaticResource InkBrush}" CornerRadius="7" Padding="8,4">
+            <TextBlock Text="WUWAScope" Foreground="White" FontWeight="Bold" FontSize="12.5" />
+          </Border>
 
-            <TextBlock Text="{Binding CurrentState.ScenarioTitle}"
-                       FontSize="15"
-                       FontWeight="Bold"
-                       VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Scenarios}"
+                    SelectedItem="{Binding ActiveScenario}"
+                    MinWidth="240"
+                    FontSize="12.5"
+                    FontWeight="SemiBold"
+                    ToolTip.Tip="Switch distributed systems scenario">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="contracts:ScenarioDescriptor">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
 
-            <Border Classes="badge-pill" Background="#E9F7EF" BorderBrush="#2E9E63">
-              <TextBlock Text="SIMULATED" FontSize="10.5" FontWeight="Bold" Foreground="#1F7A49" />
-            </Border>
+          <Border CornerRadius="10"
+                  Padding="8,3"
+                  Background="#EAF7EF"
+                  BorderBrush="#A6DFBC"
+                  BorderThickness="1"
+                  VerticalAlignment="Center">
+            <TextBlock Text="SIMULATED" FontSize="10" FontWeight="Bold" Foreground="#1E7B48" />
+          </Border>
 
-            <Border Classes="badge-pill"
-                    Background="#FFF4DC"
-                    BorderBrush="#D9822B"
-                    IsVisible="{Binding IsPrototypeStub}"
-                    ToolTip.Tip="Phase 0 interactive shell displaying sample snapshot data. Live event engine arrives in Phase 1.">
-              <TextBlock Text="PROTOTYPE STUB · PHASE 0" FontSize="10.5" FontWeight="Bold" Foreground="#A55E14" />
-            </Border>
+          <Border CornerRadius="10"
+                  Padding="8,3"
+                  Background="#FFF4DC"
+                  BorderBrush="#E5B769"
+                  BorderThickness="1"
+                  IsVisible="{Binding IsPrototypeStub}"
+                  VerticalAlignment="Center">
+            <TextBlock Text="PROTOTYPE" FontSize="10" FontWeight="Bold" Foreground="#9A5B13" />
+          </Border>
+        </StackPanel>
 
-            <Border Classes="badge-pill" Background="{StaticResource PanelSubtleBgBrush}">
-              <TextBlock Text="{Binding SimulatedTimeDisplay}" FontSize="11.5" FontWeight="SemiBold" />
-            </Border>
-          </StackPanel>
-
-          <!-- One-click panel visibility toggles -->
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Button Classes="chip" Content="{Binding LeftToggleLabel}" Command="{Binding ToggleLeftSidebarCommand}" />
-            <Button Classes="chip" Content="{Binding RightToggleLabel}" Command="{Binding ToggleRightInspectorCommand}" />
-            <Button Classes="chip" Content="{Binding BottomToggleLabel}" Command="{Binding ToggleBottomTimelineCommand}" />
-          </StackPanel>
-        </Grid>
-
-        <!-- Row 2: Playback & Fault Injection Controls -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Button Classes="pill"
-                    Classes.pill-primary="{Binding IsPlaying}"
-                    Content="▶ Play"
-                    Command="{Binding PlaySimulationCommand}"
-                    IsEnabled="{Binding CanPlay}"
-                    ToolTip.Tip="Run simulation continuously with smooth message animations (Shortcut: Space)." />
-            <Button Classes="pill"
-                    Content="⏸ Pause"
-                    Command="{Binding PauseSimulationCommand}"
-                    IsEnabled="{Binding CanPause}"
-                    ToolTip.Tip="Freeze simulated time immediately (Shortcut: Space)." />
-            <Button Classes="pill"
-                    Content="⏭ Step"
-                    Command="{Binding StepSimulationCommand}"
-                    IsEnabled="{Binding CanRunLivePlayback}"
-                    ToolTip.Tip="Advance exactly one queued event (Shortcut: N)." />
-            <Button Classes="pill"
-                    Content="↺ Reset"
-                    Command="{Binding ResetSimulationCommand}"
-                    ToolTip.Tip="Restore exact starting state for the same seed (Shortcut: R)." />
-
-            <Border Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="4,0" />
-
-            <TextBlock Text="Speed:" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
-            <ComboBox ItemsSource="{Binding SpeedOptions}"
-                      SelectedItem="{Binding SelectedSpeedLabel}"
+        <!-- Center: Unified Low-Noise Playback Controls + Clock -->
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+          <Border Background="{StaticResource PanelSubtleBgBrush}"
+                  BorderBrush="{StaticResource PanelBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="16"
+                  Padding="4,3">
+            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+              <Button Classes="pill-primary"
+                      Content="{Binding PlayPauseLabel}"
+                      Padding="12,4"
+                      Command="{Binding TogglePlayPauseCommand}"
                       IsEnabled="{Binding CanRunLivePlayback}"
-                      MinWidth="70"
-                      FontSize="12"
-                      ToolTip.Tip="Changes visual playback speed without changing event order or results." />
-          </StackPanel>
+                      ToolTip.Tip="Play or Pause simulation (Shortcut: Space)" />
+              <Button Classes="ghost"
+                      Content="⏭ Step"
+                      Command="{Binding StepSimulationCommand}"
+                      IsEnabled="{Binding CanRunLivePlayback}"
+                      ToolTip.Tip="Advance exactly one event (Shortcut: N)" />
+              <Button Classes="ghost"
+                      Content="↺"
+                      Padding="8,4"
+                      Command="{Binding ResetSimulationCommand}"
+                      ToolTip.Tip="Reset to t = 0 ms (Shortcut: R)" />
+              <Border Width="1" Height="18" Background="{StaticResource PanelBorderBrush}" Margin="4,0" />
+              <ComboBox ItemsSource="{Binding SpeedOptions}"
+                        SelectedItem="{Binding SelectedSpeedLabel}"
+                        IsEnabled="{Binding CanRunLivePlayback}"
+                        BorderThickness="0"
+                        Background="Transparent"
+                        MinWidth="64"
+                        FontSize="12"
+                        ToolTip.Tip="Visual playback speed (never alters event order)" />
+            </StackPanel>
+          </Border>
 
-          <Border Grid.Column="1" Width="1" Height="22" Background="{StaticResource PanelBorderBrush}" Margin="10,0" />
-
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-            <Button Classes="pill"
-                    Content="{Binding Action1Label}"
-                    Command="{Binding ExecuteAction1Command}"
-                    IsEnabled="{Binding CanRunLivePlayback}" />
-            <Button Classes="pill"
-                    Content="{Binding Action2Label}"
-                    Command="{Binding ExecuteAction2Command}"
-                    IsEnabled="{Binding CanRunLivePlayback}" />
-            <Button Classes="pill"
-                    Content="{Binding Action3Label}"
-                    Command="{Binding ExecuteAction3Command}"
-                    IsEnabled="{Binding CanRunLivePlayback}" />
-            <Button Classes="pill"
-                    Content="{Binding Action4Label}"
-                    Command="{Binding ExecuteAction4Command}"
-                    IsVisible="{Binding ShowAction4}"
-                    IsEnabled="{Binding CanRunLivePlayback}" />
-          </StackPanel>
-
-          <TextBlock Grid.Column="3"
-                     Text="Space: Play/Pause · N: Step · Esc: Back"
-                     FontSize="11"
+          <TextBlock Text="{Binding SimulatedTimeDisplay}"
+                     FontSize="12.5"
+                     FontWeight="Bold"
                      Foreground="{StaticResource MutedInkBrush}"
+                     MinWidth="58"
                      VerticalAlignment="Center" />
-        </Grid>
+        </StackPanel>
+
+        <!-- Right: Two Minimalist Panel Toggles -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <Button Classes="ghost"
+                  Content="◧ Explorer"
+                  FontSize="11.5"
+                  Foreground="{StaticResource MutedInkBrush}"
+                  ToolTip.Tip="Show or hide Left Explorer"
+                  Command="{Binding ToggleLeftSidebarCommand}" />
+          <Button Classes="ghost"
+                  Content="◨ Story"
+                  FontSize="11.5"
+                  Foreground="{StaticResource MutedInkBrush}"
+                  ToolTip.Tip="Show or hide Right Panel"
+                  Command="{Binding ToggleRightInspectorCommand}" />
+        </StackPanel>
       </Grid>
     </Border>
 
-    <!-- 2. MAIN WORKSPACE (LEFT SIDEBAR + CENTER 2.5D CANVAS + RIGHT INSPECTOR) -->
+    <!-- 2. FULL-HEIGHT 3-COLUMN WORKSPACE (NO BOTTOM PANEL!) -->
     <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
 
-      <!-- LEFT SIDEBAR: Scenarios & Machine Shortcuts -->
+      <!-- LEFT SIDEBAR: Clean VS Code Explorer Only -->
       <Border Grid.Column="0"
-              Width="236"
+              Width="212"
               IsVisible="{Binding IsLeftSidebarOpen}"
               Background="{StaticResource PanelBgBrush}"
               BorderBrush="{StaticResource PanelBorderBrush}"
               BorderThickness="0,0,1,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="10" Spacing="12">
+        <Grid RowDefinitions="Auto,*,Auto">
 
-            <!-- Scenarios Section (Clickable Lesson Switcher) -->
-            <StackPanel Spacing="4">
-              <TextBlock Text="SCENARIOS" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource MutedInkBrush}" />
-              <ItemsControl ItemsSource="{Binding ScenarioItems}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:ScenarioListItem">
-                    <Button Margin="0,0,0,4"
-                            Padding="8,6"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Stretch"
-                            CornerRadius="9"
-                            Background="{StaticResource PanelSubtleBgBrush}"
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="12,10,8,6">
+            <TextBlock Grid.Column="0"
+                       Text="EXPLORER"
+                       FontSize="10.5"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource MutedInkBrush}"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    Classes="tree-chevron"
+                    Width="NaN"
+                    Padding="6,1"
+                    Content="Cluster"
+                    FontSize="10.5"
+                    ToolTip.Tip="Show Cluster Overview"
+                    Command="{Binding SelectClusterOverviewCommand}" />
+          </Grid>
+
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="6,0,6,8">
+            <ItemsControl ItemsSource="{Binding ClusterNodes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:NodeOutlineItem">
+                  <StackPanel Spacing="1">
+                    <!-- Machine Tree Row -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                      <Button Grid.Column="0"
+                              Classes="tree-chevron"
+                              Content="{Binding ChevronIcon}"
+                              FontSize="11"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleNodeExpandedCommand}"
+                              CommandParameter="{Binding Id}" />
+
+                      <Button Grid.Column="1"
+                              Classes="tree-row"
+                              Classes.selected="{Binding IsSelected}"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectNodeCommand}"
+                              CommandParameter="{Binding Id}">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding RoleGlyph}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+
+                      <Button Grid.Column="2"
+                              Classes="tree-chevron"
+                              Width="22"
+                              Content="→"
+                              FontSize="11"
+                              ToolTip.Tip="Open inside machine"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenNodeCommand}"
+                              CommandParameter="{Binding Id}" />
+                    </Grid>
+
+                    <!-- Indented Child Modules -->
+                    <Border IsVisible="{Binding IsExpanded}"
+                            Margin="10,0,0,2"
+                            Padding="10,1,0,2"
                             BorderBrush="{StaticResource PanelBorderBrush}"
-                            BorderThickness="1.2"
-                            Cursor="Hand"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectScenarioCommand}"
-                            CommandParameter="{Binding Descriptor.Id}">
-                      <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0"
-                                   Text="{Binding Descriptor.Title}"
-                                   FontWeight="SemiBold"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   VerticalAlignment="Center" />
-                        <Border Grid.Column="1"
-                                CornerRadius="8"
-                                Padding="6,1"
-                                Margin="6,0,0,0"
-                                VerticalAlignment="Center"
-                                Background="#E9F7EF"
-                                BorderBrush="#2E9E63"
-                                BorderThickness="1"
-                                IsVisible="{Binding IsSelected}">
-                          <TextBlock Text="Active" FontSize="9.5" FontWeight="Bold" Foreground="#1F7A49" />
-                        </Border>
-                      </Grid>
-                    </Button>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
+                            BorderThickness="1,0,0,0">
+                      <ItemsControl ItemsSource="{Binding Modules}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:ModuleListItem">
+                            <Button Classes="tree-row"
+                                    Classes.selected="{Binding IsSelected}"
+                                    Padding="6,3"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectModuleCommand}"
+                                    CommandParameter="{Binding Id}">
+                              <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Grid.Column="0" Text="•" Margin="0,0,6,0" FontSize="11" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                              </Grid>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Border>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
 
-            <!-- Cluster Explorer (VS Code-style Tree) -->
-            <StackPanel Spacing="4">
-              <Grid ColumnDefinitions="*,Auto" Margin="2,0,2,2">
-                <TextBlock Grid.Column="0"
-                           Text="EXPLORER · CLUSTER"
-                           FontSize="10.5"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource MutedInkBrush}"
-                           VerticalAlignment="Center" />
-                <Button Grid.Column="1"
-                        Classes="tree-chevron"
-                        Width="NaN"
-                        Padding="6,1"
-                        Content="Cluster"
-                        FontSize="10.5"
-                        ToolTip.Tip="Return to Cluster Overview"
-                        Command="{Binding SelectClusterOverviewCommand}" />
-              </Grid>
-
-              <ItemsControl ItemsSource="{Binding ClusterNodes}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:NodeOutlineItem">
-                    <StackPanel Spacing="1">
-                      <!-- Machine Tree Row -->
-                      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
-                        <Button Grid.Column="0"
-                                Classes="tree-chevron"
-                                Content="{Binding ChevronIcon}"
-                                FontSize="11"
-                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleNodeExpandedCommand}"
-                                CommandParameter="{Binding Id}" />
-
-                        <Button Grid.Column="1"
-                                Classes="tree-row"
-                                Classes.selected="{Binding IsSelected}"
-                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectNodeCommand}"
-                                CommandParameter="{Binding Id}">
-                          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding RoleGlyph}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                          </StackPanel>
-                        </Button>
-
-                        <Button Grid.Column="2"
-                                Classes="tree-chevron"
-                                Width="24"
-                                Content="→"
-                                FontSize="11.5"
-                                ToolTip.Tip="Open inside machine"
-                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenNodeCommand}"
-                                CommandParameter="{Binding Id}" />
-                      </Grid>
-
-                      <!-- Indented Child Modules (VS Code Tree Guide) -->
-                      <Border IsVisible="{Binding IsExpanded}"
-                              Margin="10,0,0,2"
-                              Padding="10,1,0,2"
-                              BorderBrush="{StaticResource PanelBorderBrush}"
-                              BorderThickness="1,0,0,0">
-                        <ItemsControl ItemsSource="{Binding Modules}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ModuleListItem">
-                              <Button Classes="tree-row"
-                                      Classes.selected="{Binding IsSelected}"
-                                      Padding="6,3"
-                                      Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectModuleCommand}"
-                                      CommandParameter="{Binding Id}">
-                                <Grid ColumnDefinitions="Auto,*,Auto">
-                                  <TextBlock Grid.Column="0" Text="•" Margin="0,0,6,0" FontSize="11" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
-                                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                </Grid>
-                              </Button>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </Border>
-                    </StackPanel>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
+          <!-- Subtle Footer Link to Theory Notes -->
+          <Border Grid.Row="2"
+                  BorderBrush="{StaticResource PanelBorderBrush}"
+                  BorderThickness="0,1,0,0"
+                  Padding="8,6">
+            <Button Classes="ghost"
+                    Content="📖 Course Theory Notes ↗"
+                    FontSize="11.5"
+                    Foreground="{StaticResource MutedInkBrush}"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Left"
+                    Command="{Binding OpenTheoryNotesCommand}" />
+          </Border>
+        </Grid>
       </Border>
 
       <GridSplitter Grid.Column="1"
@@ -271,7 +243,7 @@
                     Background="Transparent"
                     ResizeDirection="Columns" />
 
-      <!-- CENTER 2.5D ISOMETRIC CANVAS -->
+      <!-- CENTER FULL-HEIGHT 2.5D ISOMETRIC CANVAS -->
       <Grid Grid.Column="2">
         <controls:IsometricTopologyCanvas x:Name="TopologyCanvas"
                                           SimulationState="{Binding CurrentState}"
@@ -281,64 +253,75 @@
                                           SelectedModuleId="{Binding SelectedModuleId}"
                                           HighlightedEvent="{Binding SelectedEvent}" />
 
-        <!-- Top-Left Floating Breadcrumb & Back Navigation Pill -->
+        <!-- Top-Left Floating Breadcrumb -->
         <StackPanel Orientation="Horizontal"
-                    Spacing="8"
-                    Margin="16"
+                    Spacing="6"
+                    Margin="16,14"
                     HorizontalAlignment="Left"
                     VerticalAlignment="Top">
           <Button Classes="pill-primary"
-                  Content="← Back to Cluster"
+                  Content="← Cluster"
                   IsVisible="{Binding IsInNodeOrModuleView}"
                   Command="{Binding NavigateToClusterCommand}" />
-
-          <Button Classes="pill"
-                  Content="↑ Up One Level"
-                  IsVisible="{Binding CanGoBack}"
-                  Command="{Binding GoBackCommand}" />
-
-          <Border Classes="badge-pill" Padding="12,6">
-            <TextBlock Text="{Binding BreadcrumbText}" FontWeight="Bold" FontSize="12.5" />
+          <Border Classes="floating-dock" Padding="12,6">
+            <TextBlock Text="{Binding BreadcrumbText}" FontWeight="SemiBold" FontSize="12" />
           </Border>
         </StackPanel>
 
-        <!-- Bottom Floating Bar: Prototype Notice (Left) + Zoom Controls (Right) -->
-        <Grid Margin="14"
-              ColumnDefinitions="*,Auto"
-              VerticalAlignment="Bottom">
-          <Border Grid.Column="0"
-                  Classes="badge-pill"
-                  Padding="10,5"
-                  Margin="0,0,12,0"
-                  Background="#FFFBF0"
-                  BorderBrush="#D9822B"
-                  HorizontalAlignment="Left"
-                  MaxWidth="440">
-            <TextBlock Text="{Binding StatusBannerText}"
-                       FontSize="11"
-                       Foreground="#7D4A12"
-                       TextWrapping="Wrap" />
-          </Border>
+        <!-- Bottom-Center Floating Scenario Action Dock (Figma/Excalidraw feel) -->
+        <Border Classes="floating-dock"
+                Margin="16,0,16,18"
+                Padding="6,5"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom">
+          <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <Button Classes="ghost"
+                    Content="{Binding Action1Label}"
+                    Command="{Binding ExecuteAction1Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
+            <Border Width="1" Height="18" Background="{StaticResource PanelBorderBrush}" Margin="2,0" />
+            <Button Classes="ghost"
+                    Content="{Binding Action2Label}"
+                    Command="{Binding ExecuteAction2Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
+            <Border Width="1" Height="18" Background="{StaticResource PanelBorderBrush}" Margin="2,0" />
+            <Button Classes="ghost"
+                    Content="{Binding Action3Label}"
+                    Command="{Binding ExecuteAction3Command}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
+            <Border Width="1"
+                    Height="18"
+                    Background="{StaticResource PanelBorderBrush}"
+                    Margin="2,0"
+                    IsVisible="{Binding ShowAction4}" />
+            <Button Classes="ghost"
+                    Content="{Binding Action4Label}"
+                    Command="{Binding ExecuteAction4Command}"
+                    IsVisible="{Binding ShowAction4}"
+                    IsEnabled="{Binding CanRunLivePlayback}" />
+          </StackPanel>
+        </Border>
 
-          <Border Grid.Column="1"
-                  Classes="badge-pill"
-                  Padding="6,4"
-                  HorizontalAlignment="Right"
-                  VerticalAlignment="Bottom">
-            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-              <Button Classes="chip" Content="−" Padding="8,2" Click="OnZoomOutClicked" />
-              <TextBlock Text="{Binding #TopologyCanvas.ZoomLabel}"
-                         FontSize="11.5"
-                         FontWeight="Bold"
-                         MinWidth="42"
-                         TextAlignment="Center"
-                         VerticalAlignment="Center" />
-              <Button Classes="chip" Content="+" Padding="8,2" Click="OnZoomInClicked" />
-              <Button Classes="chip" Content="Fit" Padding="8,2" Click="OnFitViewClicked" />
-              <Button Classes="chip" Content="Reset Pos" Padding="8,2" ToolTip.Tip="Restore default machine &amp; module positions" Click="OnResetLayoutClicked" />
-            </StackPanel>
-          </Border>
-        </Grid>
+        <!-- Top-Right Compact Zoom Pill (Opposite Top-Left Breadcrumb — zero collision with bottom Action Dock) -->
+        <Border Classes="floating-dock"
+                Margin="0,14,16,0"
+                Padding="5,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top">
+          <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+            <Button Classes="ghost" Content="−" Padding="7,2" Click="OnZoomOutClicked" />
+            <TextBlock Text="{Binding #TopologyCanvas.ZoomLabel}"
+                       FontSize="11"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource MutedInkBrush}"
+                       MinWidth="38"
+                       TextAlignment="Center"
+                       VerticalAlignment="Center" />
+            <Button Classes="ghost" Content="+" Padding="7,2" Click="OnZoomInClicked" />
+            <Button Classes="ghost" Content="Fit" Padding="7,2" FontSize="11" Click="OnFitViewClicked" />
+            <Button Classes="ghost" Content="↺" Padding="6,2" FontSize="11" ToolTip.Tip="Reset dragged node positions" Click="OnResetLayoutClicked" />
+          </StackPanel>
+        </Border>
       </Grid>
 
       <GridSplitter Grid.Column="3"
@@ -347,306 +330,317 @@
                     Background="Transparent"
                     ResizeDirection="Columns" />
 
-      <!-- RIGHT INSPECTOR: Simplified 2-Tab Card (Status + Explain) -->
+      <!-- RIGHT UNIFIED READING PANEL (Compact Node Header + Vertical Packet Story + Details) -->
       <Border Grid.Column="4"
-              Width="306"
+              Width="360"
               IsVisible="{Binding IsRightInspectorOpen}"
               Background="{StaticResource PanelBgBrush}"
               BorderBrush="{StaticResource PanelBorderBrush}"
               BorderThickness="1,0,0,0">
         <Grid RowDefinitions="Auto,Auto,*">
 
-          <!-- Inspector Header -->
+          <!-- Compact Node Summary Strip (No heavy nested cards) -->
           <Border Grid.Row="0"
                   Padding="14,12"
-                  Background="{StaticResource PanelSubtleBgBrush}"
                   BorderBrush="{StaticResource PanelBorderBrush}"
                   BorderThickness="0,0,0,1">
-            <StackPanel Spacing="6">
+            <StackPanel Spacing="8">
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0"
-                           Text="{Binding InspectorKindLabel}"
-                           FontSize="10.5"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource MutedInkBrush}" />
-                <Border Grid.Column="1" Classes="badge-pill" Padding="8,2">
-                  <TextBlock Text="{Binding InspectorStatusLabel}" FontSize="11" FontWeight="SemiBold" />
-                </Border>
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding InspectorTitle}" FontSize="15.5" FontWeight="Bold" />
+                    <TextBlock Text="{Binding InspectorStatusLabel}"
+                               FontSize="11.5"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedInkBrush}"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding InspectorSubtitle}"
+                             FontSize="11.5"
+                             Foreground="{StaticResource MutedInkBrush}"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <Button Grid.Column="1"
+                        Classes="pill"
+                        Content="Inside →"
+                        Padding="10,4"
+                        VerticalAlignment="Center"
+                        IsVisible="{Binding CanOpenSelectedNodeInternals}"
+                        Command="{Binding OpenNodeCommand}"
+                        CommandParameter="{Binding SelectedNodeId}" />
               </Grid>
 
-              <TextBlock Text="{Binding InspectorTitle}" FontSize="17" FontWeight="Bold" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding InspectorSubtitle}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" TextWrapping="Wrap" />
-
-              <Button Classes="pill-primary"
-                      Content="Open Inside Machine →"
-                      HorizontalAlignment="Left"
-                      Margin="0,4,0,0"
-                      IsVisible="{Binding CanOpenSelectedNodeInternals}"
-                      Command="{Binding OpenNodeCommand}"
-                      CommandParameter="{Binding SelectedNodeId}" />
+              <!-- Sleek 3-Metric Quick Strip -->
+              <ItemsControl ItemsSource="{Binding InspectorQuickStats}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <UniformGrid Rows="1" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:KeyValueItem">
+                    <Border Background="{StaticResource PanelSubtleBgBrush}"
+                            CornerRadius="8"
+                            Padding="8,5"
+                            Margin="0,0,6,0">
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{StaticResource MutedInkBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Value}" FontSize="12.5" FontWeight="Bold" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
           </Border>
 
-          <!-- Simplified 2-Tab Switcher: Status | Explain -->
+          <!-- Clean Segmented 2-Tab Switcher: Packet Flow | Details & Why -->
           <Border Grid.Row="1"
                   Padding="12,8"
-                  Background="{StaticResource PanelBgBrush}"
                   BorderBrush="{StaticResource PanelBorderBrush}"
                   BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="*,*">
-              <Button Grid.Column="0"
-                      Classes="pill"
-                      Content="Status &amp; Queue"
-                      Margin="0,0,4,0"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Center"
-                      Classes.pill-primary="{Binding IsStatusTabSelected}"
-                      Command="{Binding ShowStatusTabCommand}" />
-              <Button Grid.Column="1"
-                      Classes="pill"
-                      Content="Explain (Why)"
-                      Margin="4,0,0,0"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Center"
-                      Classes.pill-primary="{Binding IsExplainTabSelected}"
-                      Command="{Binding ShowExplainTabCommand}" />
-            </Grid>
+            <Border Background="{StaticResource PanelSubtleBgBrush}" CornerRadius="10" Padding="3">
+              <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0"
+                        Classes="seg-tab"
+                        Classes.selected="{Binding IsStatusTabSelected}"
+                        Content="Packet Flow"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding ShowStatusTabCommand}" />
+                <Button Grid.Column="1"
+                        Classes="seg-tab"
+                        Classes.selected="{Binding IsExplainTabSelected}"
+                        Content="Details &amp; Why"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding ShowExplainTabCommand}" />
+              </Grid>
+            </Border>
           </Border>
 
-          <!-- Tab Content Area -->
-          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="12" Spacing="12">
+          <!-- TAB 0: VERTICAL PACKET STORY FLOW -->
+          <Grid Grid.Row="2"
+                RowDefinitions="Auto,*,Auto"
+                IsVisible="{Binding IsStatusTabSelected}">
 
-              <!-- TAB 1: STATUS & QUEUE -->
-              <StackPanel Spacing="12" IsVisible="{Binding IsStatusTabSelected}">
+            <!-- Clean Compact Flow Filter Bar (Heartbeats hidden by default!) -->
+            <StackPanel Grid.Row="0" Margin="12,10,12,6" Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                  <Button Classes="chip"
+                          Classes.active="{Binding IsAllCategoryActive}"
+                          Content="All"
+                          Command="{Binding SetEventCategoryFilterCommand}"
+                          CommandParameter="All" />
+                  <Button Classes="chip"
+                          Classes.active="{Binding IsFaultsCategoryActive}"
+                          Content="Faults"
+                          Command="{Binding SetEventCategoryFilterCommand}"
+                          CommandParameter="Faults" />
+                  <Button Classes="chip"
+                          Classes.active="{Binding IsProtocolCategoryActive}"
+                          Content="Protocol"
+                          Command="{Binding SetEventCategoryFilterCommand}"
+                          CommandParameter="Protocol" />
+                </StackPanel>
 
-                <!-- Live Queue / Activity Card -->
-                <Border Classes="card">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding InspectorQueueTitle}" FontSize="12" FontWeight="Bold" />
-                    <ItemsControl ItemsSource="{Binding InspectorQueueItems}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="x:String">
-                          <Border Margin="0,2"
-                                  Padding="8,5"
-                                  CornerRadius="8"
-                                  Background="{StaticResource PanelSubtleBgBrush}">
-                            <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" />
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
+                <Button Grid.Column="1"
+                        Classes="chip"
+                        Content="{Binding HeartbeatToggleLabel}"
+                        ToolTip.Tip="Background heartbeats are hidden by default so key packet flows stay easy to read"
+                        Command="{Binding ToggleHideHeartbeatsCommand}" />
+              </Grid>
 
-                <!-- Simulated Counters Card -->
-                <Border Classes="card">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Counters (Simulated)" FontSize="12" FontWeight="Bold" />
-                    <ItemsControl ItemsSource="{Binding InspectorCounters}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:KeyValueItem">
-                          <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                            <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12" FontWeight="Bold" />
+              <TextBox Watermark="Search packets or machines..."
+                       Text="{Binding EventSearchText}"
+                       FontSize="11.5"
+                       Padding="8,5" />
+            </StackPanel>
+
+            <!-- Vertical Delivery-Tracker Timeline Rail -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="8,2,10,10">
+              <StackPanel>
+                <TextBlock Text="{Binding EmptyFlowHint}"
+                           IsVisible="{Binding !HasFilteredEvents}"
+                           FontSize="12"
+                           Foreground="{StaticResource MutedInkBrush}"
+                           TextWrapping="Wrap"
+                           Margin="10,20"
+                           TextAlignment="Center" />
+
+                <ItemsControl ItemsSource="{Binding FilteredEvents}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:EventListItem">
+                      <Button Classes="story-row"
+                              Classes.selected="{Binding IsSelected}"
+                              Margin="0,1"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectEventCommand}"
+                              CommandParameter="{Binding}">
+                        <Grid ColumnDefinitions="18,*">
+                          <!-- Timeline Rail Dot + Vertical Connector -->
+                          <Grid Grid.Column="0">
+                            <Border Width="1.5"
+                                    Background="{StaticResource PanelBorderBrush}"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,14,0,-8" />
+                            <Border Width="9"
+                                    Height="9"
+                                    CornerRadius="5"
+                                    VerticalAlignment="Top"
+                                    Margin="0,4,0,0"
+                                    Background="{Binding DotColorHex, Converter={x:Static conv:HexToBrushConverter.Instance}}" />
                           </Grid>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
 
-                <!-- Internal Modules List (visible when a Machine is selected) -->
-                <Border Classes="card" IsVisible="{Binding HasChildModules}">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Internal Modules (Click to inspect)" FontSize="12" FontWeight="Bold" />
-                    <ItemsControl ItemsSource="{Binding InspectorChildModules}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ModuleListItem">
-                          <Button Margin="0,2"
-                                  Padding="9,6"
-                                  HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Stretch"
-                                  Background="{StaticResource PanelSubtleBgBrush}"
-                                  BorderBrush="{StaticResource PanelBorderBrush}"
-                                  BorderThickness="1"
-                                  CornerRadius="8"
-                                  Cursor="Hand"
-                                  Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectModuleCommand}"
-                                  CommandParameter="{Binding Id}">
-                            <Grid ColumnDefinitions="*,Auto">
-                              <StackPanel Grid.Column="0">
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
-                                <TextBlock Text="{Binding ShortRole}" FontSize="11" Foreground="{StaticResource MutedInkBrush}" />
-                              </StackPanel>
+                          <!-- Clean 2-Line Human-Readable Packet Step -->
+                          <StackPanel Grid.Column="1" Spacing="2" Margin="4,0,0,0">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Grid.Column="0"
+                                         Text="{Binding FriendlyTag}"
+                                         FontSize="11.5"
+                                         FontWeight="Bold"
+                                         Margin="0,0,6,0" />
                               <TextBlock Grid.Column="1"
-                                         Text="{Binding StatusBadge}"
+                                         Text="{Binding RouteDisplay}"
                                          FontSize="11"
-                                         VerticalAlignment="Center"
-                                         Foreground="{StaticResource MutedInkBrush}" />
+                                         FontWeight="SemiBold"
+                                         Foreground="{StaticResource MutedInkBrush}"
+                                         TextTrimming="CharacterEllipsis"
+                                         VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding TimeDisplay}"
+                                         FontSize="10.5"
+                                         Foreground="{StaticResource MutedInkBrush}"
+                                         Margin="6,0,0,0"
+                                         VerticalAlignment="Center" />
                             </Grid>
-                          </Button>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
 
-                <!-- Selected Event Detail Card -->
-                <Border Classes="card" IsVisible="{Binding HasSelectedEvent}" BorderBrush="#2E9E63" BorderThickness="1.5">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Selected Timeline Event" FontSize="12" FontWeight="Bold" Foreground="#1F7A49" />
-                    <TextBlock Text="{Binding SelectedEvent.Summary}" FontWeight="SemiBold" FontSize="12.5" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding SelectedEventRoute}" FontSize="11.5" Foreground="{StaticResource MutedInkBrush}" />
-                    <ItemsControl ItemsSource="{Binding SelectedEventPayload}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:KeyValueItem">
-                          <Grid ColumnDefinitions="Auto,*" Margin="0,2">
-                            <TextBlock Grid.Column="0" Text="{Binding Label}" Margin="0,0,8,0" FontSize="11.5" Foreground="{StaticResource MutedInkBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11.5" FontWeight="SemiBold" />
-                          </Grid>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
+                            <TextBlock Text="{Binding Record.Summary}"
+                                       FontSize="11.5"
+                                       Foreground="{StaticResource InkBrush}"
+                                       Opacity="0.82"
+                                       TextWrapping="Wrap" />
+                          </StackPanel>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- Selected Step Inline Plain-English Explanation Drawer -->
+            <Border Grid.Row="2"
+                    IsVisible="{Binding HasSelectedEvent}"
+                    Background="#F2FAF5"
+                    BorderBrush="#B7E4C7"
+                    BorderThickness="0,1,0,0"
+                    Padding="12,10">
+              <StackPanel Spacing="4">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0"
+                             Text="WHY THIS HAPPENED"
+                             FontSize="10"
+                             FontWeight="Bold"
+                             Foreground="#1F7A49" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding SelectedEventRoute}"
+                             FontSize="10.5"
+                             FontWeight="SemiBold"
+                             Foreground="#1F7A49" />
+                </Grid>
+                <TextBlock Text="{Binding SelectedEvent.PlainExplanation}"
+                           FontSize="11.5"
+                           LineHeight="17"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <!-- TAB 1: DETAILS & WHY (Clean Flat Divider Layout — Zero Nested Cards) -->
+          <ScrollViewer Grid.Row="2"
+                        VerticalScrollBarVisibility="Auto"
+                        IsVisible="{Binding IsExplainTabSelected}">
+            <StackPanel Margin="14,12" Spacing="14">
+
+              <!-- Live Queue / Activity -->
+              <StackPanel Spacing="6">
+                <TextBlock Text="{Binding InspectorQueueTitle}"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource MutedInkBrush}" />
+                <ItemsControl ItemsSource="{Binding InspectorQueueItems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <Border Margin="0,2"
+                              Padding="9,6"
+                              CornerRadius="7"
+                              Background="{StaticResource PanelSubtleBgBrush}">
+                        <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
 
-              <!-- TAB 2: EXPLAIN (PLAIN-ENGLISH WHY + THEORY NOTES) -->
-              <StackPanel Spacing="12" IsVisible="{Binding IsExplainTabSelected}">
+              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
 
-                <Border Classes="card">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="What This Part Does" FontSize="12.5" FontWeight="Bold" />
-                    <TextBlock Text="{Binding InspectorPlainDescription}"
-                               FontSize="12.5"
-                               LineHeight="19"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="card" IsVisible="{Binding HasSelectedEvent}" Background="#F3FBF6" BorderBrush="#B7E4C7">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Why The Selected Event Happened" FontSize="12.5" FontWeight="Bold" Foreground="#1F7A49" />
-                    <TextBlock Text="{Binding SelectedEvent.PlainExplanation}"
-                               FontSize="12.5"
-                               LineHeight="19"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="card" Background="#FFFBF0" BorderBrush="#E9D3A3">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Model Simplifications (Honest Scope)" FontSize="12" FontWeight="Bold" Foreground="#8C5414" />
-                    <TextBlock Text="{Binding ActiveScenario.SimplificationsNote}"
-                               FontSize="12"
-                               LineHeight="18"
-                               Foreground="#5E4625"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="card">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Read The Full Course Theory" FontSize="12" FontWeight="Bold" />
-                    <TextBlock Text="{Binding ActiveScenario.TheoryNoteTitle}"
-                               FontSize="12"
-                               Foreground="{StaticResource MutedInkBrush}"
-                               TextWrapping="Wrap" />
-                    <Button Classes="pill"
-                            Content="Open Distributed-System Notes ↗"
-                            HorizontalAlignment="Left"
-                            Command="{Binding OpenTheoryNotesCommand}" />
-                  </StackPanel>
-                </Border>
+              <!-- Simulated Counters -->
+              <StackPanel Spacing="4">
+                <TextBlock Text="SIMULATED METRICS"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource MutedInkBrush}" />
+                <ItemsControl ItemsSource="{Binding InspectorCounters}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:KeyValueItem">
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12" FontWeight="Bold" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
 
+              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
+
+              <!-- Plain-English Role Explanation -->
+              <StackPanel Spacing="5">
+                <TextBlock Text="WHAT THIS DOES"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource MutedInkBrush}" />
+                <TextBlock Text="{Binding InspectorPlainDescription}"
+                           FontSize="12"
+                           LineHeight="19"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+
+              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
+
+              <!-- Honest Teaching Simplifications + Theory Link -->
+              <StackPanel Spacing="6">
+                <TextBlock Text="MODEL SIMPLIFICATIONS"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="#8C5414" />
+                <TextBlock Text="{Binding ActiveScenario.SimplificationsNote}"
+                           FontSize="11.5"
+                           LineHeight="18"
+                           Foreground="{StaticResource MutedInkBrush}"
+                           TextWrapping="Wrap" />
+                <Button Classes="pill"
+                        Margin="0,4,0,0"
+                        Content="Open Distributed-System Notes ↗"
+                        HorizontalAlignment="Left"
+                        Command="{Binding OpenTheoryNotesCommand}" />
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </Grid>
       </Border>
     </Grid>
-
-    <!-- 3. HORIZONTAL SPLITTER -->
-    <GridSplitter Grid.Row="2"
-                  Height="4"
-                  IsVisible="{Binding IsBottomTimelineOpen}"
-                  Background="Transparent"
-                  ResizeDirection="Rows" />
-
-    <!-- 4. BOTTOM EVENT TIMELINE -->
-    <Border Grid.Row="3"
-            Height="205"
-            IsVisible="{Binding IsBottomTimelineOpen}"
-            Background="{StaticResource PanelBgBrush}"
-            BorderBrush="{StaticResource PanelBorderBrush}"
-            BorderThickness="0,1.5,0,0">
-      <Grid RowDefinitions="Auto,*">
-
-        <!-- Timeline Filter Bar -->
-        <Border Grid.Row="0"
-                Padding="12,7"
-                Background="{StaticResource PanelSubtleBgBrush}"
-                BorderBrush="{StaticResource PanelBorderBrush}"
-                BorderThickness="0,0,0,1">
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <TextBlock Text="EVENT TIMELINE" FontSize="11.5" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,4,0" />
-              <Button Classes="chip" Content="All" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="All" />
-              <Button Classes="chip" Content="Protocol" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Protocol" />
-              <Button Classes="chip" Content="Jobs" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Jobs" />
-              <Button Classes="chip" Content="Network" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Network" />
-              <Button Classes="chip" Content="Heartbeats" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Heartbeats" />
-              <Button Classes="chip" Content="Faults" Command="{Binding SetEventCategoryFilterCommand}" CommandParameter="Faults" />
-            </StackPanel>
-
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="10,0" VerticalAlignment="Center">
-              <TextBlock Text="Machine:" FontSize="11.5" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
-              <ComboBox ItemsSource="{Binding EventNodeOptions}"
-                        SelectedItem="{Binding EventNodeFilter}"
-                        MinWidth="112"
-                        FontSize="11.5" />
-            </StackPanel>
-
-            <TextBox Grid.Column="3"
-                     Width="210"
-                     Watermark="Filter events..."
-                     Text="{Binding EventSearchText}"
-                     FontSize="12" />
-          </Grid>
-        </Border>
-
-        <!-- Event Rows -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-          <ItemsControl ItemsSource="{Binding FilteredEvents}" Margin="8,4">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:EventListItem">
-                <Button Margin="0,2"
-                        Padding="10,6"
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Stretch"
-                        Background="#FFFFFF"
-                        BorderBrush="{StaticResource PanelBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Cursor="Hand"
-                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SelectEventCommand}"
-                        CommandParameter="{Binding}">
-                  <Grid ColumnDefinitions="46,80,152,196,*">
-                    <TextBlock Grid.Column="0" Text="{Binding Record.Sequence, StringFormat=#{0}}" FontSize="11.5" FontWeight="Bold" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding TimeDisplay}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Border Grid.Column="2" CornerRadius="8" Padding="7,2" Background="{StaticResource PanelSubtleBgBrush}" HorizontalAlignment="Left" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Record.Type}" FontSize="11" FontWeight="SemiBold" />
-                    </Border>
-                    <TextBlock Grid.Column="3" Text="{Binding RouteDisplay}" FontSize="11.5" Foreground="{StaticResource MutedInkBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <TextBlock Grid.Column="4" Text="{Binding Record.Summary}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
-      </Grid>
-    </Border>
   </Grid>
 </Window>

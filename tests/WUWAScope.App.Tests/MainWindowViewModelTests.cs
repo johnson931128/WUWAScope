@@ -31,7 +31,7 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(NavigationLevel.Node, vm.CurrentLevel);
         Assert.Equal("coordinator", vm.ActiveNodeId);
         Assert.True(vm.CanGoBack);
-        Assert.Equal("Cluster  /  Coordinator", vm.BreadcrumbText);
+        Assert.Equal("Cluster / Coordinator", vm.BreadcrumbText);
         Assert.True(vm.HasChildModules);
 
         // Node -> Module 1
@@ -192,10 +192,10 @@ public sealed class MainWindowViewModelTests
         Assert.Contains("Recover Worker 1", vm.TargetWorkerActionLabel);
 
         vm.DelayNextMessageCommand.Execute(null);
-        Assert.Contains("1 armed", vm.DelayActionLabel);
+        Assert.Contains("(1)", vm.DelayActionLabel);
 
         vm.DropNextMessageCommand.Execute(null);
-        Assert.Contains("1 armed", vm.DropActionLabel);
+        Assert.Contains("(1)", vm.DropActionLabel);
 
         // Reset restores clean initial state
         vm.ResetSimulationCommand.Execute(null);
@@ -237,5 +237,25 @@ public sealed class MainWindowViewModelTests
         Assert.True(vm.ShowAction4);
         vm.StepSimulationCommand.Execute(null);
         Assert.Single(vm.CurrentState.EventLog);
+    }
+
+    [Fact]
+    public void PlanBStoryFlow_HidesHeartbeatsByDefaultAndShowsFriendlyTags()
+    {
+        var vm = new MainWindowViewModel(new PrototypeStubEngine());
+
+        // Heartbeats hidden by default so key story events stand out
+        Assert.True(vm.HideHeartbeats);
+        Assert.DoesNotContain(vm.FilteredEvents, e => e.CategoryDisplay == "Heartbeats");
+        Assert.All(vm.FilteredEvents, e =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.FriendlyTag));
+            Assert.StartsWith("#", e.DotColorHex);
+        });
+
+        // Toggling Heartbeats on reveals them
+        vm.ToggleHideHeartbeatsCommand.Execute(null);
+        Assert.False(vm.HideHeartbeats);
+        Assert.Contains(vm.FilteredEvents, e => e.CategoryDisplay == "Heartbeats");
     }
 }

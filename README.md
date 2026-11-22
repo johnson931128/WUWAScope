@@ -118,10 +118,10 @@ dotnet run --project src/WUWAScope.App -- --open-node coordinator
 4. **Leader Election (Teaching Raft)** — 5 voting servers (`Quorum = 3/5`) demonstrating randomized election timeouts, split votes, higher-term step-down, leader crash failover, and quorum loss safety.
 
 **Controls inside the app:**
-- **Play / Pause (`Space`)**, **Step (`N`)** for one event at a time, **Reset (`R`)**, and **Speed** (`0.5x` – `4.0x`).
-- **Scenario actions:** The toolbar adapts automatically to the active lesson (Submit Job / Crash Worker / Local Event / Send Message / Start Snapshot / Send `$50` / Force Timeout / Delay or Drop Next Msg).
-- **2.5D Canvas:** **Single-click** a machine to inspect it, **double-click** (or click `Open Inside Machine →`) to open its 2.5D internal module layout, **drag** machines/modules to rearrange them, **scroll** to zoom, **drag empty space** to pan, and press **`Esc`** to step back up one level without losing simulation state.
-- Use **Hide Menu / Hide Details / Hide Timeline** in the top-right to maximize the 2.5D canvas.
+- **Top bar:** Switch scenarios from the header dropdown, toggle **Play / Pause (`Space`)**, **Step (`N`)**, **Reset (`R`)**, and **Speed** (`0.5x` – `4.0x`), or hide/show the Left Explorer (`◧`) and Right Story Panel (`◨`).
+- **Floating Action Dock (bottom-center of canvas):** Adapts automatically to the active lesson (Submit Job / Crash Worker / Local Event / Send Message / Start Snapshot / Send `$50` / Force Timeout / Delay or Drop Msg).
+- **Right Story Panel (`Packet Flow` & `Details & Why`):** Reads packet transfers vertically like a timeline tracker with background heartbeats hidden by default (toggleable with one click), plain-English step tags, and click-to-explain details.
+- **2.5D Canvas:** **Single-click** a machine to inspect it, **double-click** (or click `Inside →`) to open its 2.5D internal module layout, **drag** machines/modules to rearrange them, **scroll** to zoom, **drag empty space** to pan, and press **`Esc`** to step back up one level without losing simulation state.
 
 ## Project Documents
 

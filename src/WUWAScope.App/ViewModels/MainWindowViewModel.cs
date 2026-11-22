@@ -48,6 +48,8 @@ public sealed record EventListItem(
     string TimeDisplay,
     string RouteDisplay,
     string CategoryDisplay,
+    string FriendlyTag,
+    string DotColorHex,
     bool IsSelected);
 
 public partial class MainWindowViewModel : ViewModelBase
@@ -56,6 +58,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private ISimulationEngine _engine;
     private readonly HashSet<string> _expandedNodeIds = [];
+    private bool _suppressScenarioChange;
 
     public event Action? LayoutResetRequested;
 
@@ -97,6 +100,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private int _selectedInspectorTabIndex;
+
+    [ObservableProperty]
+    private bool _hideHeartbeats = true;
 
     [ObservableProperty]
     private string _eventCategoryFilter = "All";
@@ -167,6 +173,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<KeyValueItem> InspectorCounters { get; } = [];
 
+    public ObservableCollection<KeyValueItem> InspectorQuickStats { get; } = [];
+
     public ObservableCollection<ModuleListItem> InspectorChildModules { get; } = [];
 
     public ObservableCollection<EventListItem> FilteredEvents { get; } = [];
@@ -181,6 +189,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanPause => CanRunLivePlayback && IsPlaying;
 
+    public string PlayPauseLabel => IsPlaying ? "⏸ Pause" : "▶ Play";
+
     public double SpeedMultiplier => SelectedSpeedLabel switch
     {
         "0.5x" => 0.5,
@@ -189,7 +199,23 @@ public partial class MainWindowViewModel : ViewModelBase
         _ => 1.0
     };
 
-    public string SimulatedTimeDisplay => $"t = {Math.Round(VisualTimeMs):0} ms (Simulated)";
+    public string SimulatedTimeDisplay => $"{Math.Round(VisualTimeMs):0} ms";
+
+    public string HeartbeatToggleLabel => HideHeartbeats ? "♡ Heartbeats: Off" : "♥ Heartbeats: On";
+
+    public bool IsAllCategoryActive => EventCategoryFilter == "All";
+
+    public bool IsFaultsCategoryActive => EventCategoryFilter == "Faults";
+
+    public bool IsProtocolCategoryActive => EventCategoryFilter == "Protocol";
+
+    public bool HasFilteredEvents => FilteredEvents.Count > 0;
+
+    public string EmptyFlowHint => CurrentState.EventLog.Count == 0
+        ? "Press Play (Space) or Step (N) to watch packets move."
+        : HideHeartbeats
+            ? "Only background heartbeats occurred so far. Keep stepping or turn on Heartbeats."
+            : "No events match your current filter.";
 
     // Backwards-compatible properties for Task Scheduling + dynamic labels for all 4 scenarios
     public string TargetWorkerActionLabel
@@ -209,27 +235,27 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     public string DelayActionLabel => CurrentState.Metrics.ArmedDelayCount > 0
-        ? $"⏱ Delay Msg ({CurrentState.Metrics.ArmedDelayCount} armed)"
-        : "⏱ Delay Next Msg";
+        ? $"⏱ Delay ({CurrentState.Metrics.ArmedDelayCount})"
+        : "⏱ Delay Msg";
 
     public string DropActionLabel => CurrentState.Metrics.ArmedDropCount > 0
-        ? $"✕ Drop Msg ({CurrentState.Metrics.ArmedDropCount} armed)"
-        : "✕ Drop Next Msg";
+        ? $"✕ Drop ({CurrentState.Metrics.ArmedDropCount})"
+        : "✕ Drop Msg";
 
-    // Context-aware toolbar buttons for all 4 scenarios
+    // Context-aware floating dock actions for all 4 scenarios
     public string Action1Label => CurrentState.ScenarioId switch
     {
         "logical-clocks" => $"+ Local Event ({GetSelectedOrFirstNode()?.Name ?? "P1"})",
-        "global-snapshots" => $"📸 Start Snapshot ({GetSelectedOrFirstNode()?.Name ?? "Account B"})",
+        "global-snapshots" => $"📸 Snapshot ({GetSelectedOrFirstNode()?.Name ?? "Account B"})",
         "raft-leader-election" => TargetWorkerActionLabel,
         _ => "+ Submit Job"
     };
 
     public string Action2Label => CurrentState.ScenarioId switch
     {
-        "logical-clocks" => $"✉ Send ({GetSelectedOrFirstNode()?.Name ?? "P1"} → {GetNextPeerNode()?.Name ?? "P2"})",
-        "global-snapshots" => $"💸 Send $50 ({GetSelectedOrFirstNode()?.Name ?? "A"} → {GetNextPeerNode()?.Name ?? "B"})",
-        "raft-leader-election" => $"⏱ Force Timeout ({ResolveTimeoutTargetRaftNode()?.Name ?? "Node 1"})",
+        "logical-clocks" => $"✉ Send ({ShortName(GetSelectedOrFirstNode())} → {ShortName(GetNextPeerNode())})",
+        "global-snapshots" => $"💸 Send $50 ({ShortName(GetSelectedOrFirstNode())} → {ShortName(GetNextPeerNode())})",
+        "raft-leader-election" => $"⏱ Timeout ({ResolveTimeoutTargetRaftNode()?.Name ?? "Node 1"})",
         _ => TargetWorkerActionLabel
     };
 
@@ -241,10 +267,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public string BreadcrumbText => CurrentLevel switch
     {
-        NavigationLevel.Cluster => "Cluster Overview",
-        NavigationLevel.Node => $"Cluster  /  {FindNode(ActiveNodeId)?.Name ?? "Machine"}",
-        NavigationLevel.Module => $"Cluster  /  {FindNode(ActiveNodeId)?.Name ?? "Machine"}  /  {FindModule(ActiveNodeId, SelectedModuleId)?.Name ?? "Module"}",
-        _ => "Cluster Overview"
+        NavigationLevel.Cluster => "Cluster",
+        NavigationLevel.Node => $"Cluster / {FindNode(ActiveNodeId)?.Name ?? "Machine"}",
+        NavigationLevel.Module => $"Cluster / {FindNode(ActiveNodeId)?.Name ?? "Machine"} / {FindModule(ActiveNodeId, SelectedModuleId)?.Name ?? "Module"}",
+        _ => "Cluster"
     };
 
     public bool CanGoBack => CurrentLevel != NavigationLevel.Cluster;
@@ -264,13 +290,14 @@ public partial class MainWindowViewModel : ViewModelBase
             ? FormatNodeName(SelectedEvent.SourceNodeId)
             : $"{FormatNodeName(SelectedEvent.SourceNodeId)} → {FormatNodeName(SelectedEvent.TargetNodeId)}";
 
+    // Tab 0 = Packet Flow (Story), Tab 1 = Details & Why (keeps compatibility with existing tests)
     public bool IsStatusTabSelected => SelectedInspectorTabIndex == 0;
 
     public bool IsExplainTabSelected => SelectedInspectorTabIndex == 1;
 
-    public string LeftToggleLabel => IsLeftSidebarOpen ? "Hide Menu" : "Show Menu";
+    public string LeftToggleLabel => IsLeftSidebarOpen ? "◧" : "◧";
 
-    public string RightToggleLabel => IsRightInspectorOpen ? "Hide Details" : "Show Details";
+    public string RightToggleLabel => IsRightInspectorOpen ? "◨" : "◨";
 
     public string BottomToggleLabel => IsBottomTimelineOpen ? "Hide Timeline" : "Show Timeline";
 
@@ -296,7 +323,6 @@ public partial class MainWindowViewModel : ViewModelBase
             EventNodeOptions.Add(n.Id);
         }
 
-        // Default selection per scenario for an immediately informative Inspector
         SelectedNodeId = CurrentState.ScenarioId switch
         {
             "task-scheduling" => CurrentState.Nodes.FirstOrDefault(n => n.Id == "coordinator")?.Id ?? CurrentState.Nodes.FirstOrDefault()?.Id,
@@ -313,10 +339,10 @@ public partial class MainWindowViewModel : ViewModelBase
             ? "Phase 0 Prototype Shell — Sample snapshot data is shown."
             : CurrentState.ScenarioId switch
             {
-                "logical-clocks" => "Press Play (Space) or Step (N) to replay the Note 01 Lamport & Vector Clock timeline.",
-                "global-snapshots" => "Press Play (Space) or Step (N) to watch Chandy-Lamport Markers conserve $1,000 across in-flight transfers.",
-                "raft-leader-election" => "Press Play (Space) or Step (N) to watch 5 servers elect a Term Leader — then crash the Leader to test failover!",
-                _ => "Ready! Press Play (Space) or Step (N) to watch Job J1 move through the cluster."
+                "logical-clocks" => "Press Play (Space) or Step (N) to replay Lamport & Vector Clocks.",
+                "global-snapshots" => "Press Play (Space) or Step (N) to watch Markers conserve $1,000.",
+                "raft-leader-election" => "Press Play (Space) to elect a Leader — then crash it to test failover.",
+                _ => "Press Play (Space) or Step (N) to trace Job J1 through the cluster."
             };
     }
 
@@ -326,10 +352,21 @@ public partial class MainWindowViewModel : ViewModelBase
         RefreshAllDerivedCollections();
     }
 
+    partial void OnActiveScenarioChanged(ScenarioDescriptor value)
+    {
+        if (_suppressScenarioChange || value is null || value.Id == CurrentState.ScenarioId)
+        {
+            return;
+        }
+
+        SelectScenario(value.Id);
+    }
+
     partial void OnIsPlayingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanPlay));
         OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(PlayPauseLabel));
     }
 
     partial void OnVisualTimeMsChanged(double value)
@@ -343,13 +380,25 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsExplainTabSelected));
     }
 
+    partial void OnHideHeartbeatsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HeartbeatToggleLabel));
+        RefreshFilteredEvents();
+    }
+
     partial void OnIsLeftSidebarOpenChanged(bool value) => OnPropertyChanged(nameof(LeftToggleLabel));
 
     partial void OnIsRightInspectorOpenChanged(bool value) => OnPropertyChanged(nameof(RightToggleLabel));
 
     partial void OnIsBottomTimelineOpenChanged(bool value) => OnPropertyChanged(nameof(BottomToggleLabel));
 
-    partial void OnEventCategoryFilterChanged(string value) => RefreshFilteredEvents();
+    partial void OnEventCategoryFilterChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAllCategoryActive));
+        OnPropertyChanged(nameof(IsFaultsCategoryActive));
+        OnPropertyChanged(nameof(IsProtocolCategoryActive));
+        RefreshFilteredEvents();
+    }
 
     partial void OnEventNodeFilterChanged(string value) => RefreshFilteredEvents();
 
@@ -366,7 +415,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (nextEventTime is null)
         {
             IsPlaying = false;
-            StatusBannerText = "Timeline idle — trigger a toolbar action or Reset to explore again.";
+            StatusBannerText = "Simulation idle — use the bottom dock to send work or inject faults.";
             return;
         }
 
@@ -385,9 +434,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 break;
             }
 
-            if (result.Event is not null)
+            if (result.Event is not null && (!HideHeartbeats || result.Event.Category != EventCategory.Heartbeats))
             {
-                StatusBannerText = $"[{result.Event.TimestampMs} ms] {result.Event.Summary}";
+                StatusBannerText = $"{result.Event.Summary}";
             }
 
             executedThisFrame++;
@@ -397,23 +446,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void SelectScenario(string? scenarioId)
     {
-        if (string.IsNullOrWhiteSpace(scenarioId))
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(scenarioId)) return;
 
         var descriptor = Scenarios.FirstOrDefault(s => s.Id == scenarioId);
-        if (descriptor is null || !descriptor.IsAvailable)
-        {
-            return;
-        }
+        if (descriptor is null || !descriptor.IsAvailable) return;
 
         IsPlaying = false;
         _engine.StateChanged -= OnEngineStateChanged;
         _engine = ScenarioFactory.Create(scenarioId, seed: 42);
         _engine.StateChanged += OnEngineStateChanged;
 
+        _suppressScenarioChange = true;
         ActiveScenario = descriptor;
+        _suppressScenarioChange = false;
+
         CurrentState = _engine.GetState();
         VisualTimeMs = CurrentState.SimulatedTimeMs;
 
@@ -422,6 +468,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanRunLivePlayback));
         OnPropertyChanged(nameof(CanPlay));
         OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(PlayPauseLabel));
         OnPropertyChanged(nameof(HasSelectedEvent));
         OnPropertyChanged(nameof(SelectedEventRoute));
         NotifyNavigationChanged();
@@ -430,12 +477,12 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    public void ToggleHideHeartbeats() => HideHeartbeats = !HideHeartbeats;
+
+    [RelayCommand]
     public void PlaySimulation()
     {
-        if (!CanRunLivePlayback)
-        {
-            return;
-        }
+        if (!CanRunLivePlayback) return;
 
         if (_engine.PeekNextEventTimeMs() is null && CurrentState.ScenarioId == "task-scheduling")
         {
@@ -465,7 +512,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (result.Executed && result.Event is not null)
         {
-            StatusBannerText = $"Step #{result.Event.Sequence} ({result.Event.TimestampMs} ms): {result.Event.Summary}";
+            StatusBannerText = $"{result.Event.Summary}";
         }
         else if (!string.IsNullOrWhiteSpace(result.Note))
         {
@@ -486,7 +533,7 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedEventPayload.Clear();
         StatusBannerText = IsPrototypeStub
             ? "Prototype snapshot reset."
-            : $"Reset '{ActiveScenario.Title}' to t = 0 ms (same seed and initial state).";
+            : "Reset to t = 0 ms (same seed and starting state).";
 
         LayoutResetRequested?.Invoke();
         OnPropertyChanged(nameof(HasSelectedEvent));
@@ -583,14 +630,8 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!CanRunLivePlayback) return;
 
         _engine.DispatchAction(new SubmitJobAction("User Job", TaskCount: 1));
-        if (!IsPlaying)
-        {
-            StepSimulation();
-        }
-        else
-        {
-            StatusBannerText = "Queued a new job from Client.";
-        }
+        if (!IsPlaying) StepSimulation();
+        else StatusBannerText = "Submitted a new job from Client.";
     }
 
     [RelayCommand]
@@ -610,10 +651,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _engine.DispatchAction(new CrashWorkerAction(target.Id));
         }
 
-        if (!IsPlaying)
-        {
-            StepSimulation();
-        }
+        if (!IsPlaying) StepSimulation();
     }
 
     [RelayCommand]
@@ -623,7 +661,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var extraMs = CurrentState.ScenarioId == "task-scheduling" ? 2600 : 650;
         _engine.DispatchAction(new DelayNextMessageAction(ExtraDelayMs: extraMs));
-        StatusBannerText = $"Armed +{extraMs} ms delay on the next protocol message.";
+        StatusBannerText = $"Armed +{extraMs} ms delay on the next message.";
     }
 
     [RelayCommand]
@@ -632,7 +670,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!CanRunLivePlayback) return;
 
         _engine.DispatchAction(new DropNextMessageAction());
-        StatusBannerText = "Armed packet drop on the next protocol message.";
+        StatusBannerText = "Armed packet drop on the next message.";
     }
 
     [RelayCommand]
@@ -788,7 +826,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     public void SelectEvent(EventListItem? item)
     {
-        if (item is null)
+        if (item is null || item.Record.Id == SelectedEventId)
         {
             SelectedEventId = null;
             SelectedEvent = null;
@@ -859,6 +897,14 @@ public partial class MainWindowViewModel : ViewModelBase
         return CurrentState.Nodes[(idx + 1) % CurrentState.Nodes.Count];
     }
 
+    private static string ShortName(NodeState? node)
+    {
+        if (node is null) return "?";
+        return node.Name
+            .Replace("Process ", string.Empty)
+            .Replace("Account ", string.Empty);
+    }
+
     private NodeState? ResolveCrashableTargetNode()
     {
         if (CurrentState.ScenarioId == "raft-leader-election")
@@ -868,7 +914,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 return selectedRaft;
             }
 
-            // Default to crashing the active Leader so one click demonstrates Raft failover!
             return CurrentState.Nodes.FirstOrDefault(n => n.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal))
                    ?? CurrentState.Nodes.FirstOrDefault(n => n.Health != NodeHealthStatus.Failed)
                    ?? CurrentState.Nodes.FirstOrDefault();
@@ -989,17 +1034,18 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         InspectorQueueItems.Clear();
         InspectorCounters.Clear();
+        InspectorQuickStats.Clear();
         InspectorChildModules.Clear();
 
         if (CurrentLevel == NavigationLevel.Module && FindModule(ActiveNodeId, SelectedModuleId) is { } module)
         {
             var parentNode = FindNode(module.NodeId);
-            InspectorKindLabel = "INTERNAL MODULE";
+            InspectorKindLabel = "MODULE";
             InspectorTitle = module.Name;
             InspectorSubtitle = $"{parentNode?.Name ?? module.NodeId} · {module.ShortRole}";
             InspectorStatusLabel = FormatModuleStatus(module.Status);
             InspectorPlainDescription = module.PlainDescription;
-            InspectorQueueTitle = "Items & Local State";
+            InspectorQueueTitle = "Local State & Queue";
 
             if (module.QueueItems.Count == 0)
             {
@@ -1020,12 +1066,12 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         else if (FindNode(ActiveNodeId ?? SelectedNodeId) is { } node)
         {
-            InspectorKindLabel = $"{node.Role.ToString().ToUpperInvariant()} NODE";
+            InspectorKindLabel = node.Role.ToString().ToUpperInvariant();
             InspectorTitle = node.Name;
             InspectorSubtitle = node.StatusSummary;
             InspectorStatusLabel = FormatNodeHealth(node.Health);
             InspectorPlainDescription = node.PlainDescription;
-            InspectorQueueTitle = "Live Node State & Messages";
+            InspectorQueueTitle = "Live Activity";
 
             foreach (var item in node.InboxItems)
             {
@@ -1042,29 +1088,29 @@ public partial class MainWindowViewModel : ViewModelBase
 
             if (InspectorQueueItems.Count == 0)
             {
-                InspectorQueueItems.Add("No recent activity");
+                InspectorQueueItems.Add("Idle — no buffered items");
             }
 
             if (node.Role == NodeRole.RaftServer)
             {
                 InspectorCounters.Add(new KeyValueItem("Current Term", node.ActiveTaskCount.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Majority Quorum", $"{node.Capacity} / {CurrentState.Nodes.Count}"));
+                InspectorCounters.Add(new KeyValueItem("Quorum", $"{node.Capacity} / {CurrentState.Nodes.Count}"));
             }
             else if (node.Role == NodeRole.Account)
             {
-                InspectorCounters.Add(new KeyValueItem("Live Balance (Simulated)", $"${node.ActiveTaskCount}"));
+                InspectorCounters.Add(new KeyValueItem("Balance (Sim)", $"${node.ActiveTaskCount}"));
             }
             else if (node.Role == NodeRole.Process)
             {
-                InspectorCounters.Add(new KeyValueItem("Lamport Clock", node.ActiveTaskCount.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Lamport L", node.ActiveTaskCount.ToString()));
             }
             else
             {
-                InspectorCounters.Add(new KeyValueItem("Active Tasks (Simulated)", $"{node.ActiveTaskCount} / {node.Capacity}"));
+                InspectorCounters.Add(new KeyValueItem("Active Tasks", $"{node.ActiveTaskCount} / {node.Capacity}"));
             }
 
-            InspectorCounters.Add(new KeyValueItem("Internal Modules", node.Modules.Count.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Simulated Clock", $"{CurrentState.SimulatedTimeMs} ms"));
+            InspectorCounters.Add(new KeyValueItem("Modules", node.Modules.Count.ToString()));
+            InspectorCounters.Add(new KeyValueItem("Sim Clock", $"{CurrentState.SimulatedTimeMs} ms"));
 
             foreach (var m in node.Modules)
             {
@@ -1080,12 +1126,12 @@ public partial class MainWindowViewModel : ViewModelBase
         else
         {
             var metrics = CurrentState.Metrics;
-            InspectorKindLabel = "CLUSTER OVERVIEW";
+            InspectorKindLabel = "CLUSTER";
             InspectorTitle = CurrentState.ScenarioTitle;
-            InspectorSubtitle = $"{CurrentState.Nodes.Count} nodes · Seed #{CurrentState.Seed}";
+            InspectorSubtitle = $"{CurrentState.Nodes.Count} machines · Seed #{CurrentState.Seed}";
             InspectorStatusLabel = "● Active";
             InspectorPlainDescription = ActiveScenario.ShortSummary;
-            InspectorQueueTitle = "Cluster Summary";
+            InspectorQueueTitle = "Cluster Nodes";
 
             foreach (var n in CurrentState.Nodes)
             {
@@ -1094,29 +1140,33 @@ public partial class MainWindowViewModel : ViewModelBase
 
             if (CurrentState.ScenarioId == "task-scheduling")
             {
-                InspectorCounters.Add(new KeyValueItem("Pending / Running / Done", $"{metrics.PendingTasks} / {metrics.RunningTasks} / {metrics.CompletedTasks}"));
-                InspectorCounters.Add(new KeyValueItem("Retries (Simulated)", metrics.RetryCount.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Stale Replies Ignored", metrics.StaleResultsIgnored.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
+                InspectorCounters.Add(new KeyValueItem("Tasks (Q/R/D)", $"{metrics.PendingTasks}/{metrics.RunningTasks}/{metrics.CompletedTasks}"));
+                InspectorCounters.Add(new KeyValueItem("Retries", metrics.RetryCount.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Stale Ignored", metrics.StaleResultsIgnored.ToString()));
             }
             else if (CurrentState.ScenarioId == "global-snapshots")
             {
-                InspectorCounters.Add(new KeyValueItem("Completed Snapshots", metrics.CompletedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Last Snapshot Total", metrics.LastJobDurationMs.HasValue ? $"${metrics.LastJobDurationMs.Value}" : "Pending"));
-                InspectorCounters.Add(new KeyValueItem("FIFO Messages Sent", metrics.MessagesSent.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Snapshots", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Last Total", metrics.LastJobDurationMs.HasValue ? $"${metrics.LastJobDurationMs.Value}" : "Pending"));
+                InspectorCounters.Add(new KeyValueItem("Messages", metrics.MessagesSent.ToString()));
             }
             else if (CurrentState.ScenarioId == "raft-leader-election")
             {
-                InspectorCounters.Add(new KeyValueItem("Alive Servers", $"{metrics.QueueDepth} / {CurrentState.Nodes.Count}"));
-                InspectorCounters.Add(new KeyValueItem("Highest Term", metrics.DispatchedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Elections / Leaders", $"{metrics.PendingTasks} / {metrics.CompletedTasks}"));
-                InspectorCounters.Add(new KeyValueItem("RPCs Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
+                InspectorCounters.Add(new KeyValueItem("Alive", $"{metrics.QueueDepth}/{CurrentState.Nodes.Count}"));
+                InspectorCounters.Add(new KeyValueItem("Max Term", metrics.DispatchedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Leaders", metrics.CompletedTasks.ToString()));
             }
             else
             {
-                InspectorCounters.Add(new KeyValueItem("Logged Events", metrics.CompletedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Messages Sent", metrics.MessagesSent.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Events", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages", metrics.MessagesSent.ToString()));
             }
+        }
+
+        // Top 3 compact stats for the sleek always-visible strip
+        foreach (var item in InspectorCounters.Take(3))
+        {
+            InspectorQuickStats.Add(item);
         }
 
         OnPropertyChanged(nameof(HasChildModules));
@@ -1129,6 +1179,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         foreach (var evt in CurrentState.EventLog.OrderByDescending(e => e.Sequence))
         {
+            // Hide noisy background heartbeats by default unless user explicitly enables them or picks Heartbeats category
+            if (HideHeartbeats &&
+                evt.Category == EventCategory.Heartbeats &&
+                !string.Equals(EventCategoryFilter, "Heartbeats", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (EventCategoryFilter != "All" &&
                 !string.Equals(evt.Category.ToString(), EventCategoryFilter, StringComparison.OrdinalIgnoreCase))
             {
@@ -1159,14 +1217,58 @@ public partial class MainWindowViewModel : ViewModelBase
                 ? FormatNodeName(evt.SourceNodeId)
                 : $"{FormatNodeName(evt.SourceNodeId)} → {FormatNodeName(evt.TargetNodeId)}";
 
+            var (friendlyTag, dotColor) = FormatEventPresentation(evt.Type);
+
             FilteredEvents.Add(new EventListItem(
                 evt,
                 $"{evt.TimestampMs} ms",
                 route,
                 evt.Category.ToString(),
+                friendlyTag,
+                dotColor,
                 evt.Id == SelectedEventId));
         }
+
+        OnPropertyChanged(nameof(HasFilteredEvents));
+        OnPropertyChanged(nameof(EmptyFlowHint));
     }
+
+    public static (string Tag, string DotColorHex) FormatEventPresentation(SimulationEventType type) => type switch
+    {
+        SimulationEventType.JobSubmitted => ("📥 Submit Job", "#2E9E63"),
+        SimulationEventType.JobReceived => ("📨 Job Received", "#2B7DE9"),
+        SimulationEventType.TaskEnqueued => ("◷ Queued", "#D9822B"),
+        SimulationEventType.TaskDispatched => ("📤 Dispatch", "#2B7DE9"),
+        SimulationEventType.TaskStarted => ("▶ Running", "#2E9E63"),
+        SimulationEventType.TaskExecutionFinished => ("✔ Executed", "#2E9E63"),
+        SimulationEventType.ResultReceived => ("✅ Accepted", "#2E9E63"),
+        SimulationEventType.JobFinished => ("🏁 Job Done", "#2E9E63"),
+        SimulationEventType.ClientResponded => ("🎉 Replied", "#2E9E63"),
+        SimulationEventType.WorkerCrashed => ("⚡ Crashed", "#D9534F"),
+        SimulationEventType.WorkerTimedOut => ("⚠ Timed Out", "#D9534F"),
+        SimulationEventType.TaskRequeued => ("↻ Requeued", "#D9822B"),
+        SimulationEventType.WorkerRecovered => ("💚 Recovered", "#2E9E63"),
+        SimulationEventType.MessageDropped => ("✕ Dropped", "#D9534F"),
+        SimulationEventType.StaleResultIgnored => ("🛡 Stale Ignored", "#7C4DFF"),
+        SimulationEventType.HeartbeatSent or SimulationEventType.HeartbeatReceived or
+            SimulationEventType.AppendEntriesSent or SimulationEventType.AppendEntriesReceived => ("♡ Heartbeat", "#8B929E"),
+        SimulationEventType.LocalEvent => ("◷ Local Step", "#2B7DE9"),
+        SimulationEventType.LogicalMessageSent => ("📤 Send Msg", "#2E9E63"),
+        SimulationEventType.LogicalMessageReceived => ("📥 Merge Clock", "#7C4DFF"),
+        SimulationEventType.TransferSent => ("💸 Transfer Out", "#2E9E63"),
+        SimulationEventType.TransferReceived => ("💰 Transfer In", "#2E9E63"),
+        SimulationEventType.SnapshotInitiated => ("📸 Start Cut", "#7C4DFF"),
+        SimulationEventType.MarkerReceived => ("⚑ Marker", "#7C4DFF"),
+        SimulationEventType.ChannelClosed => ("🔒 Channel Closed", "#2B7DE9"),
+        SimulationEventType.SnapshotCompleted => ("✅ Conserved", "#2E9E63"),
+        SimulationEventType.CandidateStartedElection => ("🗳 Candidate", "#D9822B"),
+        SimulationEventType.VoteRequested => ("🗳 Vote +1", "#7C4DFF"),
+        SimulationEventType.VoteGranted => ("✓ Voted", "#2E9E63"),
+        SimulationEventType.VoteDenied => ("✕ Denied", "#D9534F"),
+        SimulationEventType.LeaderElected => ("👑 Leader", "#D9822B"),
+        SimulationEventType.LeaderSteppedDown => ("↓ Step Down", "#8B929E"),
+        _ => (type.ToString(), "#646D7C")
+    };
 
     private NodeState? FindNode(string? nodeId) =>
         string.IsNullOrWhiteSpace(nodeId)
