@@ -196,7 +196,7 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Holds waiting tasks",
                 PlainDescription: "A first-in, first-out waiting line for tasks that have not been sent to a Worker yet — or were put back after a Worker failed.",
                 Status: ModuleStatus.Queued,
-                GridX: 2.9,
+                GridX: 2.8,
                 GridY: 0.0,
                 QueueItems: ["Task T2 (Job J1) - Waiting for Worker"],
                 Counters: new Dictionary<string, string>
@@ -212,8 +212,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Picks a healthy worker",
                 PlainDescription: "Checks the Worker Registry to find an alive worker with free capacity, stamps a new Attempt ID (like A1), and schedules dispatch.",
                 Status: ModuleStatus.Processing,
-                GridX: 5.8,
-                GridY: 0.0,
+                GridX: 2.8,
+                GridY: 2.8,
                 QueueItems: ["Dispatched T1 -> Worker 1 (Attempt A1)"],
                 Counters: new Dictionary<string, string>
                 {
@@ -228,8 +228,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Sends dispatches & replies",
                 PlainDescription: "Places task assignments onto links heading to Workers and sends final job summaries back to the Client.",
                 Status: ModuleStatus.Healthy,
-                GridX: 8.7,
-                GridY: 0.0,
+                GridX: 5.6,
+                GridY: 2.8,
                 QueueItems: ["Dispatch T1 (A1) -> Worker 1"],
                 Counters: new Dictionary<string, string>
                 {
@@ -242,8 +242,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Watches worker health",
                 PlainDescription: "Listens for periodic 'I am alive' heartbeats from every Worker. If a Worker stays silent past the timeout, this module triggers reassignment.",
                 Status: ModuleStatus.Healthy,
-                GridX: 2.9,
-                GridY: 3.0,
+                GridX: 0.0,
+                GridY: 5.6,
                 QueueItems: ["W1: HB @ 100 ms", "W2: HB @ 110 ms", "W3: HB @ 120 ms"],
                 Counters: new Dictionary<string, string>
                 {
@@ -257,8 +257,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Directory of workers",
                 PlainDescription: "Stores each Worker's latest health status, last heartbeat time, and whether it currently has room to take another task.",
                 Status: ModuleStatus.Healthy,
-                GridX: 5.8,
-                GridY: 3.0,
+                GridX: 2.8,
+                GridY: 5.6,
                 QueueItems: ["Worker 1: Busy (T1/A1)", "Worker 2: Idle (Free)", "Worker 3: Idle (Free)"],
                 Counters: new Dictionary<string, string>
                 {
@@ -272,8 +272,8 @@ public sealed class PrototypeStubEngine : ISimulationEngine
                 ShortRole: "Checks & accepts results",
                 PlainDescription: "Checks each incoming result's Attempt ID so outdated late replies from an old attempt can never overwrite a newer accepted result.",
                 Status: ModuleStatus.Idle,
-                GridX: 8.7,
-                GridY: 3.0,
+                GridX: 5.6,
+                GridY: 5.6,
                 QueueItems: ["No completed results yet"],
                 Counters: new Dictionary<string, string>
                 {

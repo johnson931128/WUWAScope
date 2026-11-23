@@ -279,10 +279,11 @@ public sealed class IsometricTopologyCanvas : Control
 
         if (ActiveNode is { } activeNode && activeNode.Modules.Count > 0)
         {
-            var minGx = activeNode.Modules.Min(m => m.GridX) - 1.55;
-            var maxGx = activeNode.Modules.Max(m => m.GridX) + 1.55;
-            var minGy = activeNode.Modules.Min(m => m.GridY) - 1.45;
-            var maxGy = activeNode.Modules.Max(m => m.GridY) + 1.65;
+            const double pad = 1.45;
+            var minGx = activeNode.Modules.Min(m => m.GridX) - pad;
+            var maxGx = activeNode.Modules.Max(m => m.GridX) + pad;
+            var minGy = activeNode.Modules.Min(m => m.GridY) - pad;
+            var maxGy = activeNode.Modules.Max(m => m.GridY) + pad;
 
             points.Add(GridToWorld(minGx, minGy) - new Vector(0, 36));
             points.Add(GridToWorld(maxGx, minGy));
@@ -469,25 +470,27 @@ public sealed class IsometricTopologyCanvas : Control
 
     private static void DrawIsometricChassisFloorplate(DrawingContext ctx, NodeState node)
     {
-        // Compute tight bounding rectangle in isometric (GridX, GridY) coordinates
-        var minGx = node.Modules.Min(m => m.GridX) - 1.55;
-        var maxGx = node.Modules.Max(m => m.GridX) + 1.55;
-        var minGy = node.Modules.Min(m => m.GridY) - 1.45;
-        var maxGy = node.Modules.Max(m => m.GridY) + 1.65;
+        // Symmetric padding in isometric (GridX, GridY) coordinates
+        const double pad = 1.45;
+        var minGx = node.Modules.Min(m => m.GridX) - pad;
+        var maxGx = node.Modules.Max(m => m.GridX) + pad;
+        var minGy = node.Modules.Min(m => m.GridY) - pad;
+        var maxGy = node.Modules.Max(m => m.GridY) + pad;
 
         var topCorner = GridToWorld(minGx, minGy);
         var rightCorner = GridToWorld(maxGx, minGy);
         var bottomCorner = GridToWorld(maxGx, maxGy);
         var leftCorner = GridToWorld(minGx, maxGy);
         const double plateDepth = 16.0;
+        const double cornerRadius = 24.0;
 
         var topPts = new[] { topCorner, rightCorner, bottomCorner, leftCorner };
         var shadowPts = topPts.Select(p => new Point(p.X, p.Y + plateDepth + 10)).ToArray();
 
         // Soft shadow underneath isometric floorplate
-        ctx.DrawGeometry(ShadowBrush, null, BuildRoundedPolygon(shadowPts, 24));
+        ctx.DrawGeometry(ShadowBrush, null, BuildRoundedPolygon(shadowPts, cornerRadius));
 
-        // 3D isometric side rim
+        // True G1-continuous 3D extruded rounded silhouette (identical radius on all 4 corners!)
         var sideColor = node.Role == NodeRole.Coordinator
             ? Color.Parse("#E9D29E")
             : node.Role == NodeRole.Worker
@@ -500,16 +503,7 @@ public sealed class IsometricTopologyCanvas : Control
                 ? Color.Parse("#AECBF2")
                 : Color.Parse("#D1C6B1");
 
-        var silhouettePts = new[]
-        {
-            topCorner,
-            rightCorner,
-            new Point(rightCorner.X, rightCorner.Y + plateDepth),
-            new Point(bottomCorner.X, bottomCorner.Y + plateDepth),
-            new Point(leftCorner.X, leftCorner.Y + plateDepth),
-            leftCorner
-        };
-        var silhouette = BuildRoundedPolygon(silhouettePts, 22);
+        var silhouette = BuildExtrudedQuadSilhouette(topCorner, rightCorner, bottomCorner, leftCorner, plateDepth, cornerRadius);
 
         using (ctx.PushGeometryClip(silhouette))
         {
@@ -517,15 +511,16 @@ public sealed class IsometricTopologyCanvas : Control
             var rightRim = BuildQuad(bottomCorner, rightCorner, new Point(rightCorner.X, rightCorner.Y + plateDepth), new Point(bottomCorner.X, bottomCorner.Y + plateDepth));
             ctx.DrawGeometry(new SolidColorBrush(sideColor), null, leftRim);
             ctx.DrawGeometry(new SolidColorBrush(sideRightColor), null, rightRim);
-            ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FFFDF7")), SoftCreasePen, BuildRoundedPolygon(topPts, 22));
+            ctx.DrawGeometry(new SolidColorBrush(Color.Parse("#FFFDF7")), SoftCreasePen, BuildRoundedPolygon(topPts, cornerRadius));
+            ctx.DrawLine(SoftCreasePen, new Point(bottomCorner.X, bottomCorner.Y - 2), new Point(bottomCorner.X, bottomCorner.Y + plateDepth));
         }
 
         ctx.DrawGeometry(null, InkOutlinePen, silhouette);
 
-        // Header pill sitting cleanly near top vertex of floorplate
+        // Header pill sitting cleanly above top vertex of floorplate
         DrawPillBadge(
             ctx,
-            new Point(topCorner.X, topCorner.Y - 12),
+            new Point(topCorner.X, topCorner.Y - 16),
             $"Inside {node.Name} · {node.Modules.Count} Modules",
             GetHealthAccentColor(node.Health),
             fontSize: 12.5,
@@ -841,8 +836,12 @@ public sealed class IsometricTopologyCanvas : Control
 
         var ux = dir.X / len;
         var uy = dir.Y / len;
-        var start = new Point(from.X + ux * 64, from.Y + uy * 38 + 10);
-        var end = new Point(to.X - ux * 64, to.Y - uy * 38 + 10);
+        // Uniform scalar trim along the exact center-to-center line (preserves exact isometric slope)
+        const double trim = 72.0;
+        var pFrom = new Point(from.X, from.Y + 10);
+        var pTo = new Point(to.X, to.Y + 10);
+        var start = new Point(pFrom.X + ux * trim, pFrom.Y + uy * trim);
+        var end = new Point(pTo.X - ux * trim, pTo.Y - uy * trim);
 
         var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2);
         var perpOffset = isHeartbeat ? -14.0 : 14.0;
@@ -940,9 +939,12 @@ public sealed class IsometricTopologyCanvas : Control
 
         var ux = dir.X / len;
         var uy = dir.Y / len;
-        // Trim smoothly outside the 70x39 module slab footprint
-        var start = new Point(from.X + ux * 64, from.Y + uy * 38 + 8);
-        var end = new Point(to.X - ux * 64, to.Y - uy * 38 + 8);
+        // Uniform scalar trim along the exact isometric grid axis (zero off-axis skew)
+        const double trim = 56.0;
+        var pFrom = new Point(from.X, from.Y + 6);
+        var pTo = new Point(to.X, to.Y + 6);
+        var start = new Point(pFrom.X + ux * trim, pFrom.Y + uy * trim);
+        var end = new Point(pTo.X - ux * trim, pTo.Y - uy * trim);
 
         var pen = isHighlighted
             ? HighlightLinkPen
@@ -1033,17 +1035,83 @@ public sealed class IsometricTopologyCanvas : Control
 
     private static StreamGeometry BuildSlabSilhouette(Point c, double hw, double hh, double d, double r)
     {
-        var pts = new[]
-        {
+        return BuildExtrudedQuadSilhouette(
             new Point(c.X, c.Y - hh),
             new Point(c.X + hw, c.Y),
-            new Point(c.X + hw, c.Y + d),
-            new Point(c.X, c.Y + hh + d),
-            new Point(c.X - hw, c.Y + d),
-            new Point(c.X - hw, c.Y)
-        };
+            new Point(c.X, c.Y + hh),
+            new Point(c.X - hw, c.Y),
+            d,
+            r);
+    }
 
-        return BuildRoundedPolygon(pts, r);
+    /// <summary>
+    /// Builds a true G1-continuous 3D vertical extrusion silhouette of a rounded isometric quad (top, right, bottom, left).
+    /// Uses exact de Casteljau midpoint subdivision at the left and right corners so all 4 corners share the exact same radius.
+    /// </summary>
+    private static StreamGeometry BuildExtrudedQuadSilhouette(
+        Point top,
+        Point right,
+        Point bottom,
+        Point left,
+        double depth,
+        double radius)
+    {
+        var pts = new[] { top, right, bottom, left };
+        var starts = new Point[4];
+        var ends = new Point[4];
+
+        for (var i = 0; i < 4; i++)
+        {
+            var prev = pts[(i + 3) % 4];
+            var curr = pts[i];
+            var next = pts[(i + 1) % 4];
+
+            var v1 = prev - curr;
+            var v2 = next - curr;
+            var l1 = Math.Sqrt(v1.X * v1.X + v1.Y * v1.Y);
+            var l2 = Math.Sqrt(v2.X * v2.X + v2.Y * v2.Y);
+            var r = Math.Min(radius, Math.Min(l1, l2) * 0.42);
+
+            starts[i] = new Point(curr.X + v1.X / l1 * r, curr.Y + v1.Y / l1 * r);
+            ends[i] = new Point(curr.X + v2.X / l2 * r, curr.Y + v2.Y / l2 * r);
+        }
+
+        // Exact vertical tangent extrema on left (i=3) and right (i=1) quadratic corner Beziers (t = 0.5)
+        static Point Mid(Point a, Point b) => new((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5);
+        static Point ShiftY(Point p, double dy) => new(p.X, p.Y + dy);
+
+        var rCtrlTop = Mid(starts[1], right);
+        var rCtrlBot = Mid(right, ends[1]);
+        var rTangentTop = Mid(rCtrlTop, rCtrlBot);
+
+        var lCtrlBot = Mid(starts[3], left);
+        var lCtrlTop = Mid(left, ends[3]);
+        var lTangentTop = Mid(lCtrlBot, lCtrlTop);
+
+        var geo = new StreamGeometry();
+        using var g = geo.Open();
+
+        // Upper half (top face from left tangent -> top corner -> right tangent)
+        g.BeginFigure(lTangentTop, true);
+        g.QuadraticBezierTo(lCtrlTop, ends[3]);
+        g.LineTo(starts[0]);
+        g.QuadraticBezierTo(top, ends[0]);
+        g.LineTo(starts[1]);
+        g.QuadraticBezierTo(rCtrlTop, rTangentTop);
+
+        // Right vertical side wall
+        g.LineTo(ShiftY(rTangentTop, depth));
+
+        // Lower half (bottom face shifted by +depth from right tangent -> bottom corner -> left tangent)
+        g.QuadraticBezierTo(ShiftY(rCtrlBot, depth), ShiftY(ends[1], depth));
+        g.LineTo(ShiftY(starts[2], depth));
+        g.QuadraticBezierTo(ShiftY(bottom, depth), ShiftY(ends[2], depth));
+        g.LineTo(ShiftY(starts[3], depth));
+        g.QuadraticBezierTo(ShiftY(lCtrlBot, depth), ShiftY(lTangentTop, depth));
+
+        // Left vertical side wall closes cleanly back to lTangentTop
+        g.EndFigure(true);
+        return geo;
     }
 
     private static void DrawRoundedDiamond(

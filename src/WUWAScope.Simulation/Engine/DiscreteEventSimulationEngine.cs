@@ -1359,7 +1359,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-job-queue", "coordinator", "Job Queue", "Holds waiting tasks",
                 "Waiting line for tasks not yet sent to a worker, including tasks requeued after timeouts or crashes.",
                 queuedList.Count > 0 ? ModuleStatus.Queued : ModuleStatus.Idle,
-                2.9, 0.0,
+                2.8, 0.0,
                 queuedList.Select(tid => $"{tid} (Job {_tasks[tid].JobId}) - Waiting").ToList(),
                 new Dictionary<string, string>
                 {
@@ -1371,7 +1371,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-scheduler", "coordinator", "Scheduler", "Picks a healthy worker",
                 "Selects a healthy idle worker from the Worker Registry, tags each dispatch with a new Attempt generation, and sends it out.",
                 _lastActiveModuleId == "coord-scheduler" ? ModuleStatus.Processing : ModuleStatus.Healthy,
-                5.8, 0.0,
+                2.8, 2.8,
                 _coordinator.RecentOutbox.ToList(),
                 new Dictionary<string, string>
                 {
@@ -1383,7 +1383,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-outbox", "coordinator", "Outbox", "Sends dispatches & replies",
                 "Puts task assignments and final client completion replies onto the simulated network.",
                 _inFlightMessages.Values.Any(m => m.SourceNodeId == "coordinator") ? ModuleStatus.Processing : ModuleStatus.Healthy,
-                8.7, 0.0,
+                5.6, 2.8,
                 _inFlightMessages.Values.Where(m => m.SourceNodeId == "coordinator").Select(m => m.PillLabel).ToList(),
                 new Dictionary<string, string>
                 {
@@ -1393,7 +1393,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-hb-monitor", "coordinator", "Heartbeat Monitor", "Watches worker health",
                 $"Listens for worker heartbeats. After {_config.HeartbeatSuspectMs} ms of silence it marks a worker Suspected; after {_config.HeartbeatTimeoutMs} ms it times them out and requeues work.",
                 suspectedWorkers > 0 ? ModuleStatus.Suspected : (_coordinator.TimedOutWorkers > 0 ? ModuleStatus.Processing : ModuleStatus.Healthy),
-                2.9, 3.0,
+                0.0, 5.6,
                 _workerOrder.Select(id =>
                 {
                     var r = _coordinator.WorkerRegistry[id];
@@ -1410,7 +1410,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-registry", "coordinator", "Worker Registry", "Directory of workers",
                 "Stores each worker's known health status, last heartbeat timestamp, and assigned task.",
                 healthyWorkers == 0 ? ModuleStatus.Failed : ModuleStatus.Healthy,
-                5.8, 3.0,
+                2.8, 5.6,
                 registryLines,
                 new Dictionary<string, string>
                 {
@@ -1421,7 +1421,7 @@ public sealed class DiscreteEventSimulationEngine : ISimulationEngine
                 "coord-result-handler", "coordinator", "Result Handler", "Checks & accepts results",
                 "Verifies every result's Attempt ID so stale late replies from older attempts can never overwrite an accepted result.",
                 _lastActiveModuleId == "coord-result-handler" ? ModuleStatus.Processing : ModuleStatus.Healthy,
-                8.7, 3.0,
+                5.6, 5.6,
                 _tasks.Values.Where(t => t.AcceptedAttemptId is not null).TakeLast(4).Select(t => $"Accepted {t.Id} ({t.AcceptedAttemptId})").ToList(),
                 new Dictionary<string, string>
                 {
