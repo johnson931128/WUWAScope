@@ -139,30 +139,11 @@ WUWAScope uses a calm, canvas-first desktop workspace inspired by the step-by-st
 
 The simulation core has **zero references to Avalonia, UI threads, or rendering**. Everything on screen is a pure projection of immutable engine snapshots and the ordered event log.
 
-```mermaid
-flowchart LR
-    subgraph Core["WUWAScope.Simulation (Pure C#)"]
-        Factory["ScenarioFactory"]
-        Engines["Discrete-Event Engines<br/>(Task Scheduling · Clocks · Snapshots · Raft)"]
-        Queue["Deterministic Priority Queue<br/>(SimulatedTimeMs, Sequence)"]
-        State["Immutable SimulationState & EventLog"]
-        Factory --> Engines --> Queue --> State
-    end
+<div align="center">
 
-    subgraph Desktop["WUWAScope.App (Avalonia UI · MVVM)"]
-        VM["MainWindowViewModel<br/>(Navigation · Story Rail · Playback)"]
-        Canvas["IsometricTopologyCanvas<br/>(2.5D Vector Rendering & 60 FPS Interpolation)"]
-        State --> VM --> Canvas
-    end
+![WUWAScope Architecture — Pure C# Simulation Core, Avalonia UI MVVM Desktop App, and xUnit Automated Tests](docs/assets/architecture.png)
 
-    subgraph Tests["Automated Verification (xUnit)"]
-        SimTests["WUWAScope.Simulation.Tests (18)"]
-        AppTests["WUWAScope.App.Tests (10)"]
-    end
-
-    Core -.-> SimTests
-    Desktop -.-> AppTests
-```
+</div>
 
 ---
 
