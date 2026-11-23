@@ -339,63 +339,39 @@
               BorderThickness="1,0,0,0">
         <Grid RowDefinitions="Auto,Auto,*">
 
-          <!-- Compact Node Summary Strip (No heavy nested cards) -->
+          <!-- Lean Node Header (No duplicate stat cards) -->
           <Border Grid.Row="0"
-                  Padding="14,12"
+                  Padding="14,11"
                   BorderBrush="{StaticResource PanelBorderBrush}"
                   BorderThickness="0,0,0,1">
-            <StackPanel Spacing="8">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Grid.Column="0" Spacing="2">
-                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding InspectorTitle}" FontSize="15.5" FontWeight="Bold" />
-                    <TextBlock Text="{Binding InspectorStatusLabel}"
-                               FontSize="11.5"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource MutedInkBrush}"
-                               VerticalAlignment="Center" />
-                  </StackPanel>
-                  <TextBlock Text="{Binding InspectorSubtitle}"
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding InspectorTitle}" FontSize="15.5" FontWeight="Bold" />
+                  <TextBlock Text="{Binding InspectorStatusLabel}"
                              FontSize="11.5"
+                             FontWeight="SemiBold"
                              Foreground="{StaticResource MutedInkBrush}"
-                             TextTrimming="CharacterEllipsis" />
+                             VerticalAlignment="Center" />
                 </StackPanel>
+                <TextBlock Text="{Binding InspectorSubtitle}"
+                           FontSize="11.5"
+                           Foreground="{StaticResource MutedInkBrush}"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
 
-                <Button Grid.Column="1"
-                        Classes="pill"
-                        Content="Inside →"
-                        Padding="10,4"
-                        VerticalAlignment="Center"
-                        IsVisible="{Binding CanOpenSelectedNodeInternals}"
-                        Command="{Binding OpenNodeCommand}"
-                        CommandParameter="{Binding SelectedNodeId}" />
-              </Grid>
-
-              <!-- Sleek 3-Metric Quick Strip -->
-              <ItemsControl ItemsSource="{Binding InspectorQuickStats}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <UniformGrid Rows="1" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:KeyValueItem">
-                    <Border Background="{StaticResource PanelSubtleBgBrush}"
-                            CornerRadius="8"
-                            Padding="8,5"
-                            Margin="0,0,6,0">
-                      <StackPanel Spacing="1">
-                        <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{StaticResource MutedInkBrush}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding Value}" FontSize="12.5" FontWeight="Bold" />
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
+              <Button Grid.Column="1"
+                      Classes="pill"
+                      Content="Inside →"
+                      Padding="10,4"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding CanOpenSelectedNodeInternals}"
+                      Command="{Binding OpenNodeCommand}"
+                      CommandParameter="{Binding SelectedNodeId}" />
+            </Grid>
           </Border>
 
-          <!-- Clean Segmented 2-Tab Switcher: Packet Flow | Details & Why -->
+          <!-- Clean Segmented 2-Tab Switcher: Packet Flow | Node Info -->
           <Border Grid.Row="1"
                   Padding="12,8"
                   BorderBrush="{StaticResource PanelBorderBrush}"
@@ -412,7 +388,7 @@
                 <Button Grid.Column="1"
                         Classes="seg-tab"
                         Classes.selected="{Binding IsExplainTabSelected}"
-                        Content="Details &amp; Why"
+                        Content="Node Info"
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Center"
                         Command="{Binding ShowExplainTabCommand}" />
@@ -558,87 +534,99 @@
             </Border>
           </Grid>
 
-          <!-- TAB 1: DETAILS & WHY (Clean Flat Divider Layout — Zero Nested Cards) -->
-          <ScrollViewer Grid.Row="2"
-                        VerticalScrollBarVisibility="Auto"
-                        IsVisible="{Binding IsExplainTabSelected}">
-            <StackPanel Margin="14,12" Spacing="14">
+          <!-- TAB 1: NODE INFO (Role-Specific Live State — Zero Redundancy) -->
+          <Grid Grid.Row="2"
+                RowDefinitions="*,Auto"
+                IsVisible="{Binding IsExplainTabSelected}">
 
-              <!-- Live Queue / Activity -->
-              <StackPanel Spacing="6">
-                <TextBlock Text="{Binding InspectorQueueTitle}"
-                           FontSize="11"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource MutedInkBrush}" />
-                <ItemsControl ItemsSource="{Binding InspectorQueueItems}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="x:String">
-                      <Border Margin="0,2"
-                              Padding="9,6"
-                              CornerRadius="7"
-                              Background="{StaticResource PanelSubtleBgBrush}">
-                        <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" />
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="14,12" Spacing="13">
 
-              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
-
-              <!-- Simulated Counters -->
-              <StackPanel Spacing="4">
-                <TextBlock Text="SIMULATED METRICS"
-                           FontSize="11"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource MutedInkBrush}" />
-                <ItemsControl ItemsSource="{Binding InspectorCounters}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:KeyValueItem">
-                      <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
-                        <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12" FontWeight="Bold" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-
-              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
-
-              <!-- Plain-English Role Explanation -->
-              <StackPanel Spacing="5">
-                <TextBlock Text="WHAT THIS DOES"
-                           FontSize="11"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource MutedInkBrush}" />
+                <!-- 1-2 Sentence Plain-English Role Summary -->
                 <TextBlock Text="{Binding InspectorPlainDescription}"
                            FontSize="12"
-                           LineHeight="19"
-                           TextWrapping="Wrap" />
-              </StackPanel>
-
-              <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
-
-              <!-- Honest Teaching Simplifications + Theory Link -->
-              <StackPanel Spacing="6">
-                <TextBlock Text="MODEL SIMPLIFICATIONS"
-                           FontSize="11"
-                           FontWeight="Bold"
-                           Foreground="#8C5414" />
-                <TextBlock Text="{Binding ActiveScenario.SimplificationsNote}"
-                           FontSize="11.5"
                            LineHeight="18"
                            Foreground="{StaticResource MutedInkBrush}"
                            TextWrapping="Wrap" />
-                <Button Classes="pill"
-                        Margin="0,4,0,0"
-                        Content="Open Distributed-System Notes ↗"
-                        HorizontalAlignment="Left"
-                        Command="{Binding OpenTheoryNotesCommand}" />
+
+                <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
+
+                <!-- Primary Role Section (Waiting Queue / Current Work / Recent Events / Channels / Votes) -->
+                <StackPanel Spacing="5">
+                  <TextBlock Text="{Binding InspectorQueueTitle}"
+                             FontSize="10.5"
+                             FontWeight="Bold"
+                             Foreground="{StaticResource MutedInkBrush}" />
+                  <ItemsControl ItemsSource="{Binding InspectorQueueItems}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <Border Margin="0,2"
+                                Padding="9,6"
+                                CornerRadius="7"
+                                Background="{StaticResource PanelSubtleBgBrush}">
+                          <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
+                <!-- Optional Secondary Section (e.g., Workers Status on Coordinator) -->
+                <StackPanel Spacing="5" IsVisible="{Binding HasSecondarySection}">
+                  <Border Height="1" Background="{StaticResource PanelBorderBrush}" Margin="0,0,0,6" />
+                  <TextBlock Text="{Binding InspectorSecondaryTitle}"
+                             FontSize="10.5"
+                             FontWeight="Bold"
+                             Foreground="{StaticResource MutedInkBrush}" />
+                  <ItemsControl ItemsSource="{Binding InspectorSecondaryItems}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <Border Margin="0,2"
+                                Padding="9,6"
+                                CornerRadius="7"
+                                Background="{StaticResource PanelSubtleBgBrush}">
+                          <TextBlock Text="{Binding}" FontSize="11.5" TextWrapping="Wrap" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
+                <Border Height="1" Background="{StaticResource PanelBorderBrush}" />
+
+                <!-- Role-Specific Simulated Stats (No repeated Sim Clock or Module Count) -->
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding InspectorCountersTitle}"
+                             FontSize="10.5"
+                             FontWeight="Bold"
+                             Foreground="{StaticResource MutedInkBrush}" />
+                  <ItemsControl ItemsSource="{Binding InspectorCounters}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:KeyValueItem">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                          <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="12" Foreground="{StaticResource MutedInkBrush}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12" FontWeight="Bold" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
               </StackPanel>
-            </StackPanel>
-          </ScrollViewer>
+            </ScrollViewer>
+
+            <!-- Compact 1-Line Honest Teaching Model Footer (Full simplifications on hover) -->
+            <Border Grid.Row="1"
+                    Padding="14,8"
+                    BorderBrush="{StaticResource PanelBorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Background="{StaticResource PanelSubtleBgBrush}"
+                    ToolTip.Tip="{Binding ActiveScenario.SimplificationsNote}">
+              <TextBlock Text="{Binding ModelFooterText}"
+                         FontSize="10.5"
+                         Foreground="{StaticResource MutedInkBrush}"
+                         TextTrimming="CharacterEllipsis" />
+            </Border>
+          </Grid>
         </Grid>
       </Border>
     </Grid>

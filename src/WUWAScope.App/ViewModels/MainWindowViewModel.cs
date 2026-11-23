@@ -136,7 +136,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _inspectorPlainDescription = string.Empty;
 
     [ObservableProperty]
-    private string _inspectorQueueTitle = "Live Activity";
+    private string _inspectorQueueTitle = "WAITING QUEUE";
+
+    [ObservableProperty]
+    private string _inspectorSecondaryTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _inspectorCountersTitle = "STATS (SIMULATED)";
 
     [ObservableProperty]
     private EventRecord? _selectedEvent;
@@ -171,11 +177,23 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<string> InspectorQueueItems { get; } = [];
 
+    public ObservableCollection<string> InspectorSecondaryItems { get; } = [];
+
     public ObservableCollection<KeyValueItem> InspectorCounters { get; } = [];
 
     public ObservableCollection<KeyValueItem> InspectorQuickStats { get; } = [];
 
     public ObservableCollection<ModuleListItem> InspectorChildModules { get; } = [];
+
+    public bool HasSecondarySection => InspectorSecondaryItems.Count > 0;
+
+    public string ModelFooterText => CurrentState.ScenarioId switch
+    {
+        "logical-clocks" => "ⓘ Teaching model · fixed 3 processes, reliable channels (hover for details)",
+        "global-snapshots" => "ⓘ Teaching model · reliable FIFO channels, no crashes (hover for details)",
+        "raft-leader-election" => "ⓘ Teaching Raft · election & quorum only (hover for details)",
+        _ => "ⓘ Teaching simulator · simulated metrics only (hover for details)"
+    };
 
     public ObservableCollection<EventListItem> FilteredEvents { get; } = [];
 
@@ -1033,6 +1051,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private void RefreshInspector()
     {
         InspectorQueueItems.Clear();
+        InspectorSecondaryItems.Clear();
+        InspectorSecondaryTitle = string.Empty;
         InspectorCounters.Clear();
         InspectorQuickStats.Clear();
         InspectorChildModules.Clear();
@@ -1045,7 +1065,8 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorSubtitle = $"{parentNode?.Name ?? module.NodeId} · {module.ShortRole}";
             InspectorStatusLabel = FormatModuleStatus(module.Status);
             InspectorPlainDescription = module.PlainDescription;
-            InspectorQueueTitle = "Local State & Queue";
+            InspectorQueueTitle = "LOCAL STATE & QUEUE";
+            InspectorCountersTitle = "MODULE COUNTERS (SIMULATED)";
 
             if (module.QueueItems.Count == 0)
             {
@@ -1069,48 +1090,12 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorKindLabel = node.Role.ToString().ToUpperInvariant();
             InspectorTitle = node.Name;
             InspectorSubtitle = node.StatusSummary;
-            InspectorStatusLabel = FormatNodeHealth(node.Health);
+            InspectorStatusLabel = node.Role == NodeRole.RaftServer && node.StatusSummary.StartsWith("LEADER", StringComparison.Ordinal)
+                ? "👑 Leader"
+                : FormatNodeHealth(node.Health);
             InspectorPlainDescription = node.PlainDescription;
-            InspectorQueueTitle = "Live Activity";
 
-            foreach (var item in node.InboxItems)
-            {
-                InspectorQueueItems.Add(item);
-            }
-
-            foreach (var item in node.OutboxItems)
-            {
-                if (!InspectorQueueItems.Contains(item))
-                {
-                    InspectorQueueItems.Add(item);
-                }
-            }
-
-            if (InspectorQueueItems.Count == 0)
-            {
-                InspectorQueueItems.Add("Idle — no buffered items");
-            }
-
-            if (node.Role == NodeRole.RaftServer)
-            {
-                InspectorCounters.Add(new KeyValueItem("Current Term", node.ActiveTaskCount.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Quorum", $"{node.Capacity} / {CurrentState.Nodes.Count}"));
-            }
-            else if (node.Role == NodeRole.Account)
-            {
-                InspectorCounters.Add(new KeyValueItem("Balance (Sim)", $"${node.ActiveTaskCount}"));
-            }
-            else if (node.Role == NodeRole.Process)
-            {
-                InspectorCounters.Add(new KeyValueItem("Lamport L", node.ActiveTaskCount.ToString()));
-            }
-            else
-            {
-                InspectorCounters.Add(new KeyValueItem("Active Tasks", $"{node.ActiveTaskCount} / {node.Capacity}"));
-            }
-
-            InspectorCounters.Add(new KeyValueItem("Modules", node.Modules.Count.ToString()));
-            InspectorCounters.Add(new KeyValueItem("Sim Clock", $"{CurrentState.SimulatedTimeMs} ms"));
+            PopulateRoleSpecificNodeInfo(node);
 
             foreach (var m in node.Modules)
             {
@@ -1131,46 +1116,225 @@ public partial class MainWindowViewModel : ViewModelBase
             InspectorSubtitle = $"{CurrentState.Nodes.Count} machines · Seed #{CurrentState.Seed}";
             InspectorStatusLabel = "● Active";
             InspectorPlainDescription = ActiveScenario.ShortSummary;
-            InspectorQueueTitle = "Cluster Nodes";
+            InspectorQueueTitle = "MACHINES STATUS";
+            InspectorCountersTitle = "CLUSTER COUNTERS (SIMULATED)";
 
             foreach (var n in CurrentState.Nodes)
             {
-                InspectorQueueItems.Add($"{n.Name}: {n.StatusSummary}");
+                InspectorQueueItems.Add($"{n.Name} — {n.StatusSummary}");
             }
 
             if (CurrentState.ScenarioId == "task-scheduling")
             {
-                InspectorCounters.Add(new KeyValueItem("Tasks (Q/R/D)", $"{metrics.PendingTasks}/{metrics.RunningTasks}/{metrics.CompletedTasks}"));
+                InspectorCounters.Add(new KeyValueItem("Queued / Running / Done", $"{metrics.PendingTasks} / {metrics.RunningTasks} / {metrics.CompletedTasks}"));
                 InspectorCounters.Add(new KeyValueItem("Retries", metrics.RetryCount.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Stale Ignored", metrics.StaleResultsIgnored.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Stale Replies Ignored", metrics.StaleResultsIgnored.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{metrics.MessagesSent} / {metrics.MessagesDropped}"));
             }
             else if (CurrentState.ScenarioId == "global-snapshots")
             {
-                InspectorCounters.Add(new KeyValueItem("Snapshots", metrics.CompletedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Last Total", metrics.LastJobDurationMs.HasValue ? $"${metrics.LastJobDurationMs.Value}" : "Pending"));
-                InspectorCounters.Add(new KeyValueItem("Messages", metrics.MessagesSent.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Completed Snapshots", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Last Conserved Total", metrics.LastJobDurationMs.HasValue ? $"${metrics.LastJobDurationMs.Value}" : "Pending"));
+                InspectorCounters.Add(new KeyValueItem("FIFO Messages Sent", metrics.MessagesSent.ToString()));
             }
             else if (CurrentState.ScenarioId == "raft-leader-election")
             {
-                InspectorCounters.Add(new KeyValueItem("Alive", $"{metrics.QueueDepth}/{CurrentState.Nodes.Count}"));
-                InspectorCounters.Add(new KeyValueItem("Max Term", metrics.DispatchedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Leaders", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Alive Servers", $"{metrics.QueueDepth} / {CurrentState.Nodes.Count}"));
+                InspectorCounters.Add(new KeyValueItem("Highest Term", metrics.DispatchedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Elections / Leaders", $"{metrics.PendingTasks} / {metrics.CompletedTasks}"));
             }
             else
             {
-                InspectorCounters.Add(new KeyValueItem("Events", metrics.CompletedTasks.ToString()));
-                InspectorCounters.Add(new KeyValueItem("Messages", metrics.MessagesSent.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Total Events", metrics.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages Sent", metrics.MessagesSent.ToString()));
             }
         }
 
-        // Top 3 compact stats for the sleek always-visible strip
-        foreach (var item in InspectorCounters.Take(3))
-        {
-            InspectorQuickStats.Add(item);
-        }
-
+        OnPropertyChanged(nameof(HasSecondarySection));
+        OnPropertyChanged(nameof(ModelFooterText));
         OnPropertyChanged(nameof(HasChildModules));
         OnPropertyChanged(nameof(CanOpenSelectedNodeInternals));
+    }
+
+    private void PopulateRoleSpecificNodeInfo(NodeState node)
+    {
+        switch (node.Role)
+        {
+            case NodeRole.Coordinator:
+            {
+                var queueMod = node.Modules.FirstOrDefault(m => m.Id == "coord-job-queue");
+                var regMod = node.Modules.FirstOrDefault(m => m.Id == "coord-registry");
+                var m = CurrentState.Metrics;
+
+                InspectorQueueTitle = $"WAITING QUEUE ({m.QueueDepth})";
+                if (queueMod is not null && queueMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in queueMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+                else
+                {
+                    InspectorQueueItems.Add("Queue is empty — no tasks waiting");
+                }
+
+                InspectorSecondaryTitle = "WORKERS STATUS";
+                if (regMod is not null)
+                {
+                    foreach (var line in regMod.QueueItems) InspectorSecondaryItems.Add(line);
+                }
+
+                InspectorCountersTitle = "COUNTERS (SIMULATED)";
+                InspectorCounters.Add(new KeyValueItem("Completed Tasks", m.CompletedTasks.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Task Retries", m.RetryCount.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Stale Results Ignored", m.StaleResultsIgnored.ToString()));
+                InspectorCounters.Add(new KeyValueItem("Messages Sent / Dropped", $"{m.MessagesSent} / {m.MessagesDropped}"));
+                break;
+            }
+
+            case NodeRole.Worker:
+            {
+                var execMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-executor", StringComparison.Ordinal));
+                var hbMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-heartbeat", StringComparison.Ordinal));
+                var stateMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-local-state", StringComparison.Ordinal));
+
+                InspectorQueueTitle = "CURRENT WORK";
+                if (execMod is not null && execMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in execMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+                else
+                {
+                    InspectorQueueItems.Add("Idle — ready for next task");
+                }
+
+                InspectorCountersTitle = "STATS (SIMULATED)";
+                if (execMod is not null)
+                {
+                    foreach (var c in execMod.Counters)
+                    {
+                        if (!c.Key.Equals("Active Task", StringComparison.OrdinalIgnoreCase))
+                        {
+                            InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                        }
+                    }
+                }
+                if (hbMod is not null && hbMod.QueueItems.Count > 0)
+                {
+                    InspectorCounters.Add(new KeyValueItem("Heartbeat", hbMod.QueueItems[0]));
+                }
+                if (stateMod is not null && stateMod.Counters.TryGetValue("Boot Generation", out var gen))
+                {
+                    InspectorCounters.Add(new KeyValueItem("Boot Generation", gen));
+                }
+                break;
+            }
+
+            case NodeRole.Client:
+            {
+                var trackerMod = node.Modules.FirstOrDefault(m => m.Id == "client-tracker");
+                InspectorQueueTitle = "JOBS";
+                if (trackerMod is not null && trackerMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in trackerMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+                else
+                {
+                    InspectorQueueItems.Add("No jobs submitted yet");
+                }
+
+                InspectorCountersTitle = "STATS (SIMULATED)";
+                if (trackerMod is not null)
+                {
+                    foreach (var c in trackerMod.Counters) InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                }
+                break;
+            }
+
+            case NodeRole.Process:
+            {
+                var clockMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-clock", StringComparison.Ordinal));
+                var histMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-history", StringComparison.Ordinal));
+                var inMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-inbox", StringComparison.Ordinal));
+                var outMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-outbox", StringComparison.Ordinal));
+
+                InspectorQueueTitle = "RECENT EVENTS";
+                if (histMod is not null && histMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in histMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+                else
+                {
+                    InspectorQueueItems.Add("No events yet — press Play or Step");
+                }
+
+                InspectorCountersTitle = "CLOCK STATE";
+                if (clockMod is not null)
+                {
+                    foreach (var c in clockMod.Counters) InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                }
+                if (outMod is not null && outMod.Counters.TryGetValue("Messages Sent", out var sent) &&
+                    inMod is not null && inMod.Counters.TryGetValue("Messages Received", out var recv))
+                {
+                    InspectorCounters.Add(new KeyValueItem("Messages Sent / Recv", $"{sent} / {recv}"));
+                }
+                break;
+            }
+
+            case NodeRole.Account:
+            {
+                var ledgerMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-ledger", StringComparison.Ordinal));
+                var recMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-recorder", StringComparison.Ordinal));
+                var chMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-channels", StringComparison.Ordinal));
+
+                InspectorQueueTitle = "INCOMING CHANNELS (SC)";
+                if (chMod is not null && chMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in chMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+                else
+                {
+                    InspectorQueueItems.Add("No active snapshot recording");
+                }
+
+                InspectorCountersTitle = "ACCOUNT & SNAPSHOT";
+                if (ledgerMod is not null)
+                {
+                    foreach (var c in ledgerMod.Counters) InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                }
+                if (recMod is not null)
+                {
+                    foreach (var c in recMod.Counters) InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                }
+                break;
+            }
+
+            case NodeRole.RaftServer:
+            {
+                var stateMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-state", StringComparison.Ordinal));
+                var timerMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-timer", StringComparison.Ordinal));
+                var voteMod = node.Modules.FirstOrDefault(m => m.Id.EndsWith("-votes", StringComparison.Ordinal));
+
+                InspectorQueueTitle = "VOTING & QUORUM";
+                if (voteMod is not null && voteMod.QueueItems.Count > 0)
+                {
+                    foreach (var item in voteMod.QueueItems) InspectorQueueItems.Add(item);
+                }
+
+                InspectorCountersTitle = "RAFT STATE";
+                if (stateMod is not null)
+                {
+                    foreach (var c in stateMod.Counters) InspectorCounters.Add(new KeyValueItem(c.Key, c.Value));
+                }
+                if (timerMod is not null && timerMod.Counters.TryGetValue("Timer State", out var tState))
+                {
+                    InspectorCounters.Add(new KeyValueItem("Election Timer", tState));
+                }
+                if (voteMod is not null && voteMod.Counters.TryGetValue("Quorum Required", out var qReq))
+                {
+                    InspectorCounters.Add(new KeyValueItem("Majority Quorum", qReq));
+                }
+                break;
+            }
+        }
     }
 
     private void RefreshFilteredEvents()

@@ -258,4 +258,24 @@ public sealed class MainWindowViewModelTests
         Assert.False(vm.HideHeartbeats);
         Assert.Contains(vm.FilteredEvents, e => e.CategoryDisplay == "Heartbeats");
     }
+
+    [Fact]
+    public void NodeInfoTab_ShowsRoleSpecificNonRedundantContent()
+    {
+        var vm = new MainWindowViewModel(new DiscreteEventSimulationEngine(seed: 42));
+
+        // Coordinator shows Waiting Queue + Workers Status + non-redundant counters (no Sim Clock or Modules)
+        vm.SelectNodeCommand.Execute("coordinator");
+        Assert.StartsWith("WAITING QUEUE", vm.InspectorQueueTitle);
+        Assert.True(vm.HasSecondarySection);
+        Assert.Equal("WORKERS STATUS", vm.InspectorSecondaryTitle);
+        Assert.Equal(3, vm.InspectorSecondaryItems.Count);
+        Assert.DoesNotContain(vm.InspectorCounters, c => c.Label.Contains("Clock", StringComparison.OrdinalIgnoreCase));
+
+        // Worker shows Current Work without secondary Workers Status table
+        vm.SelectNodeCommand.Execute("worker-1");
+        Assert.Equal("CURRENT WORK", vm.InspectorQueueTitle);
+        Assert.False(vm.HasSecondarySection);
+        Assert.NotEmpty(vm.InspectorCounters);
+    }
 }

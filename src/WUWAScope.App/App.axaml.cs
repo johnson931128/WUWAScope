@@ -37,6 +37,13 @@ public partial class App : Application
                     {
                         vm.PlaySimulationCommand.Execute(null);
                     }
+                    else if (string.Equals(args[i], "--tab", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    {
+                        if (string.Equals(args[i + 1], "info", StringComparison.OrdinalIgnoreCase))
+                        {
+                            vm.ShowExplainTabCommand.Execute(null);
+                        }
+                    }
                 }
             }
 
