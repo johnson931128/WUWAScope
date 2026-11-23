@@ -1,130 +1,196 @@
+<div align="center">
+
+<img src="docs/assets/logo.png" alt="WUWAScope Logo" width="128" />
+
 # WUWAScope
 
-**An interactive desktop lab for seeing how distributed systems really work.**
+**An interactive 2.5D desktop lab for watching distributed systems work — and break — step by step.**
 
-WUWAScope is a local desktop app built with **C# and Avalonia UI**. Instead of reading static diagrams and guessing what happens inside a multi-machine system, you can run a live simulation, pause it, step through events one by one, break things on purpose, and look inside any machine to see how it reacts.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![Avalonia UI](https://img.shields.io/badge/Avalonia%20UI-11.3-8B44AC?style=flat-square)](https://avaloniaui.net/)
+[![Tests](https://img.shields.io/badge/xUnit%20Tests-28%20Passing-1E7B48?style=flat-square)](#quick-start)
+[![Mode](https://img.shields.io/badge/Metrics-100%25%20Simulated-2E6BD9?style=flat-square)](#theory-reference--honest-simulation)
 
-> **Project status:** **Phase 2 (Theory-Linked Distributed Systems Lessons) is complete and runnable locally.** All 4 interactive desktop scenarios run on pure C# deterministic discrete-event engines: **Distributed Task Scheduling**, **Logical Clocks (Lamport & Vector)**, **Global Snapshots (Chandy-Lamport)**, and **Leader Election (Teaching Raft)**. **Phase 3 (Advanced Lab & Experiments)** is planned next.
+[Live Demo](#live-demo) · [4 Playable Scenarios](#4-playable-scenarios) · [Quick Start](#quick-start) · [Controls](#workspace--controls) · [Architecture](#architecture) · [Theory Notes](#theory-reference--honest-simulation)
+
+</div>
+
+---
+
+## Live Demo
+
+Instead of staring at static architecture slides and guessing what happens across machines, **WUWAScope** runs a real local discrete-event simulation inside a native **C# + Avalonia UI** desktop app. Play continuously, freeze simulated time, step one event at a time, inject crashes or packet drops, and zoom inside any machine without losing your place.
+
+<div align="center">
+
+![WUWAScope Live Demo — Task Scheduling, Coordinator Internals, Global Snapshots, and Raft Leader Election](docs/assets/demo.gif)
+
+*Captured directly from the local Avalonia desktop app — [Download full-resolution MP4 demo (`demo.mp4`, 1280×808)](docs/assets/demo.mp4).*
+
+</div>
+
+---
 
 ## What Makes WUWAScope Different
 
-WUWAScope is not a fake server monitoring dashboard and not a static slideshow. It combines an **interactive system diagram**, a **step-by-step simulator**, and a **deep node inspector** in one local desktop window.
-
-You can explore the system at **three zoom levels**:
-
-1. **Cluster View (The Big Picture)** — See all machines working together (Client, Coordinator, Workers), their current health, and messages traveling between them.
-2. **Node View (Inside One Machine)** — Click any machine to open it up and see its internal parts (such as Request Handler, Scheduler, Task Queue, Inbox, Executor, and Heartbeat Sender) and how data flows between them.
-3. **Module View (Inside One Part)** — Click any internal part to inspect its current state, waiting queue, recent inputs/outputs, and event history. Different machine roles have different internal parts.
-
-### Core Features
-
-- **Play / Pause / Step / Reset / Speed:** Run the simulation continuously, freeze time, advance exactly one event at a time, restart from the same starting point, or change playback speed.
-- **Visible message travel:** Watch messages leave one machine, travel across the network, arrive, get delayed, get dropped, or get retried — always in the exact order events happened.
-- **Zoom in and out seamlessly:** Move from Cluster → Node → Module and back without losing your place or restarting the simulation.
-- **Built-in failure testing:** Crash a worker, recover it, or delay/drop a message to see how the system detects problems and recovers step by step.
-- **Event timeline:** Follow an ordered log of everything that happened, filter by type or machine, and click any entry to see what caused it.
-- **Clear explanations:** Plain-language notes explaining *why* something happened, with links to the full course theory notes.
-- **Honest simulated numbers:** All metrics are clearly labeled as **Simulated**. Nothing pretends to be real CPU, RAM, or live network measurements.
-
-## Desktop Layout
-
-WUWAScope is designed as a clean, desktop-first engineering workspace. Its step-by-step storytelling is inspired by [Designed to Scale — Request Lifecycle](https://designed-to-scale.vercel.app/#/request-lifecycle/3), while its UI, visual style, and interactive node-internals view are designed from scratch for a desktop app.
-
-| Area | What It Shows |
+| Principle | What It Means in Practice |
 | --- | --- |
-| **Top toolbar** | Current scenario name, Simulated mode badge, Play / Pause / Step / Reset, speed control, and failure triggers |
-| **Left sidebar** | Scenario list, machine outline, and short concept guides |
-| **Center canvas** | Interactive zoomable diagram of the cluster (or the selected node's internal modules) with animated message paths |
-| **Right inspector** | Live details for the selected cluster, node, or module (status, queues, counters, and plain-language notes) |
-| **Bottom timeline** | Ordered event log with filters and click-to-inspect details |
+| **Three Zoom Levels (`Cluster → Node → Module`)** | Double-click any machine to open its 2.5D internal parts (such as `Request Handler`, `Job Queue`, `Scheduler`, and `Heartbeat Monitor`), click a part to inspect its live state, and press `Esc` to step back out without pausing or resetting the run. |
+| **State-Driven & Deterministic** | *Deterministic* means the exact same settings, random seed, and actions always produce the exact same event order and outcome. Every moving packet dot, status badge, counter, and story entry comes directly from the simulation engine — never from fake UI timers. |
+| **Failures as First-Class Citizens** | Crash a worker mid-task, delay or drop messages, or trigger an election timeout. Watch *heartbeat timeouts* (missed "I'm alive" signals), task reassignment, and *stale-result rejection* (safely ignoring a late reply from a failed attempt) happen honestly step by step. |
 
-**Golden rule:** The simulation state and event log drive everything you see on screen. Animations never run on fake, disconnected timers.
+<details>
+<summary><strong>Preview: Zooming inside the Coordinator (3×3 internal module floorplate)</strong></summary>
+<br />
+<p align="center">
+  <img src="docs/assets/scenario-coordinator-inside.png" alt="Inside Coordinator — 7 internal modules arranged on an isometric 3x3 floorplate" width="88%" />
+</p>
+</details>
 
-## First Playable Scenario: Distributed Task Scheduling
+---
 
-The first working version focuses on one classic, easy-to-follow setup: **1 Client + 1 Coordinator + 3 Workers**.
+## 4 Playable Scenarios
 
-**Normal flow (Happy Path):**
-1. The Client sends a new Job.
-2. The Coordinator receives the Job, creates a Task, and puts it in its waiting Queue.
-3. The Scheduler picks a healthy Worker and sends the Task over the simulated network.
-4. The Worker receives the Task, runs it, and sends the Result back.
-5. The Coordinator records the Result and replies to the Client.
+All four scenarios run locally on pure-C# discrete-event engines and can be switched anytime from the top dropdown.
 
-**Failure flow (When Things Go Wrong):**
-1. You crash a Worker while it is busy (or delay its messages).
-2. The Worker stops sending heartbeats (periodic "I'm alive" signals).
-3. After a timeout, the Coordinator marks that Worker as failed and puts the unfinished Task back into the queue.
-4. The Scheduler assigns a fresh attempt of that Task to another healthy Worker.
-5. If a late reply from the old failed attempt shows up later, the Coordinator recognizes it as outdated and safely ignores it.
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/scenario-task-scheduling.png" alt="Distributed Task Scheduling" />
+      <br />
+      <strong>1. Distributed Task Scheduling</strong><br />
+      1 Client, 1 Coordinator, 3 Workers. Watch jobs enqueue, dispatch, survive worker crashes via heartbeat timeouts, reassign to healthy workers, and reject late stale results.
+    </td>
+    <td width="50%">
+      <img src="docs/assets/scenario-logical-clocks.png" alt="Logical Clocks — Lamport and Vector" />
+      <br />
+      <strong>2. Logical Clocks (Lamport &amp; Vector)</strong><br />
+      3 asynchronous processes (<code>P1</code>, <code>P2</code>, <code>P3</code>) replaying the verified course timeline with Lamport counters (<code>L</code>), Vector timestamps (<code>V</code>), and concurrency (<code>∥</code>) detection.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/scenario-global-snapshots.png" alt="Global Snapshots — Chandy-Lamport" />
+      <br />
+      <strong>3. Global Snapshots (Chandy-Lamport)</strong><br />
+      3 bank accounts (<code>$500 + $200 + $300 = $1,000</code>) connected by strict FIFO channels. Purple Markers record local balances plus in-flight <code>$50</code> transfers so total money stays conserved.
+    </td>
+    <td width="50%">
+      <img src="docs/assets/scenario-raft-election.png" alt="Leader Election — Teaching Raft" />
+      <br />
+      <strong>4. Leader Election (Teaching Raft)</strong><br />
+      5 voting servers needing a <em>Quorum</em> (strict majority of <code>3/5</code>) to elect a Leader. Explore randomized election timeouts, split votes, higher-term step-down, and leader crash failover.
+    </td>
+  </tr>
+</table>
 
-You can click into any machine during the run to watch its queues, state changes, and messages update in real time.
+---
 
-## Theory Reference
+## Quick Start
 
-All formal distributed-systems theory, proofs, and course notes live in a separate repository: [Distributed-System Notes](https://github.com/johnson931128/Distributed-System). **WUWAScope focuses on interactive simulation and visual intuition instead of duplicating textbook chapters.**
-
-Published reference notes currently available:
-
-- [Notes Index & Progress](https://github.com/johnson931128/Distributed-System/blob/main/notes/README.md)
-- [Course Introduction](https://github.com/johnson931128/Distributed-System/blob/main/notes/00-course-introduction.md)
-- [Logical Clocks, Global States & Checkpointing](https://github.com/johnson931128/Distributed-System/blob/main/notes/01-logical-clocks-checkpointing.md)
-- [Fault Tolerance, Paxos & Raft](https://github.com/johnson931128/Distributed-System/blob/main/notes/02-fault-tolerance-paxos-raft.md)
-
-Future topics that do not yet have published notes may be listed as planned, never presented as already verified.
-
-## Planned Architecture
-
-WUWAScope is a native cross-platform desktop application written in **C# (.NET)** using **Avalonia UI**:
-
-- **Simulation Core (`WUWAScope.Simulation`):** A pure C# library with zero UI dependencies. It runs the simulated clock, event queue, machine state transitions, and repeatable random seed.
-- **Desktop UI (`WUWAScope.App`):** Built with **Avalonia UI** (using MVVM — separating UI layout from screen state logic) and hardware-accelerated vector graphics for smooth zooming, panning, and message animations.
-- **Automated Tests (`WUWAScope.Simulation.Tests` & `WUWAScope.App.Tests`):** Unit tests that verify exact event ordering, repeatable replays, crash recovery, and UI interactions.
-- **Future Live Mode (Optional):** If we ever connect real local processes later, that adapter will stay completely separate from the simulation core.
-
-## Roadmap
-
-- **Phase 0 — Interactive Shell:** Runnable Avalonia desktop app with the five-panel workspace, clickable Cluster → Node → Module navigation, clear placeholder/stub labels, and core simulation interfaces ready for Phase 1.
-- **Phase 1 — First Working Simulator (MVP):** Real pure-C# event engine driving the Task Scheduling scenario, smooth message animations, Play/Pause/Step/Reset, Event Timeline, Worker Crash & Reassignment, Stale Result handling, and full unit tests.
-- **Phase 2 — Core Distributed Systems Lessons:** New scenarios built on the same engine, linked to the theory notes — Logical Clocks, Global Snapshots, and Leader Election / Consensus (Raft/Paxos).
-- **Phase 3 — Deeper Lab Tools:** Network splits (partitions), custom delay/drop settings, timeline scrubbing, trace export/import, and side-by-side policy comparisons.
-- **Phase 4 — Live Mode (Optional):** Feed events from real local processes into the same visual workspace, clearly separated from Simulated Mode.
-
-## Running Locally (Phase 2 — 4 Playable Scenarios)
-
-Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on `.NET 10.0.102`).
+**Requirement:** [.NET 10 SDK](https://dotnet.microsoft.com/) (verified locally on `.NET 10.0.102`).
 
 ```bash
-# Build the entire solution
+# 1. Build the solution
 dotnet build WUWAScope.slnx
 
-# Run all 26 automated unit tests (engine invariants + ViewModel navigation & scenario switching)
+# 2. Run all 28 automated xUnit tests (engine invariants + ViewModel navigation)
 dotnet test WUWAScope.slnx
 
-# Launch the local Avalonia desktop app
+# 3. Launch the desktop app
 dotnet run --project src/WUWAScope.App
+```
 
-# Optional: launch directly into any scenario with autoplay or inside a specific machine
+### Handy Launch Flags
+
+Jump straight into any lesson or internal view from the terminal:
+
+```bash
+dotnet run --project src/WUWAScope.App -- --scenario task-scheduling --autoplay
 dotnet run --project src/WUWAScope.App -- --scenario logical-clocks --autoplay
 dotnet run --project src/WUWAScope.App -- --scenario global-snapshots --autoplay
 dotnet run --project src/WUWAScope.App -- --scenario raft-leader-election --autoplay
 dotnet run --project src/WUWAScope.App -- --open-node coordinator
 ```
 
-**Included playable scenarios (switch anytime in the left sidebar):**
-1. **Distributed Task Scheduling** — 1 Client, 1 Coordinator, 3 Workers; heartbeat timeouts, worker crash/recovery, task reassignment, message delay/drop, and stale-result rejection.
-2. **Logical Clocks (Lamport & Vector)** — 3 processes (`P1`, `P2`, `P3`) replaying the verified `notes/01` §3–4 lecture timeline plus interactive local events, message sends, and concurrency (`∥`) detection.
-3. **Global Snapshots (Chandy-Lamport)** — 3 bank accounts (`$500`, `$200`, `$300` = `$1,000` conserved) over strict FIFO channels showing how Markers capture in-flight `$50` transfers in channel states (`SC`).
-4. **Leader Election (Teaching Raft)** — 5 voting servers (`Quorum = 3/5`) demonstrating randomized election timeouts, split votes, higher-term step-down, leader crash failover, and quorum loss safety.
+---
 
-**Controls inside the app:**
-- **Top bar:** Switch scenarios from the header dropdown, toggle **Play / Pause (`Space`)**, **Step (`N`)**, **Reset (`R`)**, and **Speed** (`0.5x` – `4.0x`), or hide/show the Left Explorer (`◧`) and Right Story Panel (`◨`).
-- **Floating Action Dock (bottom-center of canvas):** Adapts automatically to the active lesson (Submit Job / Crash Worker / Local Event / Send Message / Start Snapshot / Send `$50` / Force Timeout / Delay or Drop Msg).
-- **Right Story Panel (`Packet Flow` & `Details & Why`):** Reads packet transfers vertically like a timeline tracker with background heartbeats hidden by default (toggleable with one click), plain-English step tags, and click-to-explain details.
-- **2.5D Canvas:** **Single-click** a machine to inspect it, **double-click** (or click `Inside →`) to open its 2.5D internal module layout, **drag** machines/modules to rearrange them, **scroll** to zoom, **drag empty space** to pan, and press **`Esc`** to step back up one level without losing simulation state.
+## Workspace & Controls
+
+WUWAScope uses a calm, canvas-first desktop workspace inspired by the step-by-step storytelling of [Designed to Scale](https://designed-to-scale.vercel.app/#/request-lifecycle/3), built natively for desktop interaction:
+
+| Workspace Area | What It Does |
+| --- | --- |
+| **Top Bar** | Scenario dropdown, `SIMULATED` mode badge, unified **Play / Pause**, **Step**, **Reset**, playback speed (`0.5x` – `4.0x`), simulated clock (`ms`), and panel toggles (`Explorer` / `Story`). |
+| **Left Explorer** | VS Code-style expandable machine tree showing every machine and its internal modules for one-click navigation. |
+| **Center 2.5D Canvas** | Interactive zoom/pan isometric canvas with animated packet dots, status badges, drag-to-rearrange layout (`Reset Pos` to restore), and a bottom **Floating Action Dock** that adapts to the active scenario. |
+| **Right Story Panel** | Two focused tabs: **Packet Flow** (vertical story rail with human-readable tags, filters, and background heartbeats hidden by default) and **Node Info** (role-specific live queues, health, counters, and plain-English notes). |
+
+**Keyboard & Mouse Shortcuts:**
+- `Space` — Play / Pause simulation
+- `N` — Advance **exactly one** discrete event
+- `R` — Reset current scenario cleanly back to `t = 0 ms`
+- `Esc` — Zoom back up one level (`Module → Node → Cluster`)
+- **Single-click** selects a machine or module · **Double-click** (or `Inside →`) opens a machine's internals · **Scroll** zooms · **Drag node** rearranges · **Drag empty space** pans
+
+---
+
+## Architecture
+
+The simulation core has **zero references to Avalonia, UI threads, or rendering**. Everything on screen is a pure projection of immutable engine snapshots and the ordered event log.
+
+```mermaid
+flowchart LR
+    subgraph Core["WUWAScope.Simulation (Pure C#)"]
+        Factory["ScenarioFactory"]
+        Engines["Discrete-Event Engines<br/>(Task Scheduling · Clocks · Snapshots · Raft)"]
+        Queue["Deterministic Priority Queue<br/>(SimulatedTimeMs, Sequence)"]
+        State["Immutable SimulationState & EventLog"]
+        Factory --> Engines --> Queue --> State
+    end
+
+    subgraph Desktop["WUWAScope.App (Avalonia UI · MVVM)"]
+        VM["MainWindowViewModel<br/>(Navigation · Story Rail · Playback)"]
+        Canvas["IsometricTopologyCanvas<br/>(2.5D Vector Rendering & 60 FPS Interpolation)"]
+        State --> VM --> Canvas
+    end
+
+    subgraph Tests["Automated Verification (xUnit)"]
+        SimTests["WUWAScope.Simulation.Tests (18)"]
+        AppTests["WUWAScope.App.Tests (10)"]
+    end
+
+    Core -.-> SimTests
+    Desktop -.-> AppTests
+```
+
+---
+
+## Theory Reference & Honest Simulation
+
+- **100% Simulated Numbers:** Every timestamp, queue count, and balance shown in the app is **Simulated**. WUWAScope never pretends local simulated nodes are real OS processes, containers, or physical hardware.
+- **Teaching Models vs. Formal Theory:** Formal proofs, algorithms, and full course notes live in the companion repository **[Distributed-System](https://github.com/johnson931128/Distributed-System)**. Each scenario in WUWAScope clearly documents what was simplified for clarity.
+
+Verified course notes currently aligned with WUWAScope:
+- [Notes Index & Progress](https://github.com/johnson931128/Distributed-System/blob/main/notes/README.md)
+- [00 — Course Introduction](https://github.com/johnson931128/Distributed-System/blob/main/notes/00-course-introduction.md)
+- [01 — Logical Clocks, Global States & Checkpointing](https://github.com/johnson931128/Distributed-System/blob/main/notes/01-logical-clocks-checkpointing.md)
+- [02 — Fault Tolerance, Paxos & Raft](https://github.com/johnson931128/Distributed-System/blob/main/notes/02-fault-tolerance-paxos-raft.md)
+
+---
+
+## Roadmap
+
+- [x] **Phase 0 — Interactive Shell:** Native Avalonia desktop workspace, 2.5D isometric cluster/node canvas, and `Cluster → Node → Module` navigation.
+- [x] **Phase 1 — First Playable MVP:** Deterministic pure-C# Task Scheduling engine, smooth packet animations, worker crash/recovery, heartbeat timeouts, message delay/drop, and stale-result rejection.
+- [x] **Phase 2 — Theory-Linked Lessons:** Logical Clocks (Lamport & Vector), Global Snapshots (Chandy-Lamport), Teaching Raft Leader Election, streamlined canvas-first UI, and 28 automated tests.
+- [ ] **Phase 3 — Advanced Lab Tools:** Network partitions, custom delay/drop profiles, timeline scrubbing, trace export/import, and policy comparisons.
+- [ ] **Phase 4 — Live Mode (Optional):** Ingest real local process events through a separate adapter without mixing live I/O into the pure simulation engine.
+
+---
 
 ## Project Documents
 
-- [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — Detailed product design, scenario walkthroughs, engine contract, and acceptance checklists.
-- [AGENTS.md](AGENTS.md) — Rules and engineering standards for AI coding agents working on this repo.
-- [GEMINI.md](GEMINI.md) — Entry file for Gemini / Antigravity pointing to `AGENTS.md`.
+- [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) — Product design, scenario walkthroughs, engine contract, and acceptance criteria.
+- [AGENTS.md](AGENTS.md) — Engineering standards and rules for contributors and AI coding agents.
+- [GEMINI.md](GEMINI.md) — Gemini / Antigravity entrypoint pointing to `AGENTS.md`.

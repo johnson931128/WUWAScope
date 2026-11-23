@@ -38,12 +38,10 @@ The app helps you see and answer practical questions:
 
 | Area | What Goes Here | Main Actions |
 | --- | --- | --- |
-| **Header** | App & scenario title, clear `SIMULATED` mode badge | Switch scenarios; always know you are in simulation mode |
-| **Playback toolbar** | Play, Pause, Step, Reset, speed slider, fault buttons | Control **one** shared simulation clock |
-| **Left sidebar** | Scenario list (Task Scheduling active; others marked Planned), machine list | Pick a scenario; read its goal and simplifications |
-| **Center canvas** | Interactive diagram of Client, Coordinator, and 3 Workers with directional links | Click nodes or messages, zoom in/out, pan around |
-| **Right inspector** | Two clean tabs: **Status** (live state, queues, internal parts) and **Explain** (plain-English guide + theory links) | Inspect whichever cluster, node, or module is selected; one-click collapse to maximize the canvas |
-| **Bottom timeline** | Ordered list of events with simulated time, sender → receiver, and category | Filter events; click an event to highlight its path and inspect details; collapsible |
+| **Top bar** | Brand badge, scenario dropdown, clear `SIMULATED` badge, unified Play/Pause, Step, Reset, speed selector, simulated clock (`ms`), and panel toggles | Switch scenarios and control **one** shared simulation clock |
+| **Left Explorer** | Collapsible VS Code-style machine & module tree plus quick link to the theory notes | Jump directly to any machine or internal module |
+| **Center 2.5D canvas** | Full-height interactive isometric diagram with animated packets, top-right zoom pill, and bottom-center **Floating Action Dock** | Single-click to inspect, double-click to open internals, drag nodes/modules, inject faults or scenario actions |
+| **Right Story Panel** | Two focused tabs: **Packet Flow** (vertical story rail with filters and heartbeat toggle) and **Node Info** (role-specific queues, health, counters, and plain-English explanations) | Follow cause-and-effect packet history and inspect whichever cluster, node, or module is selected |
 
 ### 3.2 Three-Level Drill-Down (Cluster → Node → Module)
 
